@@ -12,5 +12,9 @@ data/pilot/*.csv
 data/qc_overlap.csv
 results/*.csv
 results/*.png
+/pilot_scores.csv
+/pilot_scores_eval.csv
+/results_table.csv
+/binoculars_threshold.json
 *.bin
 *.safetensors
