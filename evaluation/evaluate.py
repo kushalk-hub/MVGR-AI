@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 
 import matplotlib
 matplotlib.use("Agg")
@@ -94,6 +95,17 @@ def main():
     if out_df.empty:
         print("No evaluation rows produced.")
         return
+    present = set(out_df["level"])
+    missing = [lv for lv in LEVELS_ORDER if lv not in present]
+    if missing:
+        counts = df["paraphrase_level"].value_counts().to_dict()
+        print("ERROR: eval CSV is missing paraphrase levels: " + ", ".join(missing))
+        print("Present levels (eval CSV): "
+              + (", ".join(f"{lv}={n}" for lv, n in counts.items()) if counts else "none"))
+        print("Hint: missing AI levels -> DIPPER generation incomplete. Check data/pilot/pilot_dataset.csv")
+        print("      per-level row counts (column 'paraphrase_level') and re-run the DIPPER cell, then")
+        print("      run_pilot -> calibrate -> evaluate again.")
+        sys.exit(1)
     out_df.to_csv(args.output_table, index=False)
     print(f"Results table -> {args.output_table}\n")
     print(out_df.to_string(index=False))

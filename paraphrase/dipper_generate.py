@@ -23,6 +23,38 @@ COLUMNS = [
 ]
 
 
+def load_model(model_id):
+    import transformers
+
+    try:
+        from transformers import BitsAndBytesConfig
+        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+        return T5ForConditionalGeneration.from_pretrained(
+            model_id, quantization_config=quant_config, device_map="auto"
+        )
+    except (ImportError, TypeError, ValueError, NotImplementedError):
+        pass
+
+    try:
+        return T5ForConditionalGeneration.from_pretrained(
+            model_id, load_in_8bit=True, device_map="auto"
+        )
+    except Exception as exc:
+        try:
+            import bitsandbytes
+            bnb_ver = bitsandbytes.__version__
+        except Exception:
+            bnb_ver = "not installed"
+        raise SystemExit(
+            "\nDIPPER requires 8-bit loading (T5-XXL ~11GB).\n"
+            f"  transformers = {transformers.__version__}\n"
+            f"  bitsandbytes = {bnb_ver}\n"
+            f"  cuda available = {torch.cuda.is_available()}\n"
+            "Fix: run the notebook's pip-install cell (it must print success), then re-run.\n"
+            f"Last error: {exc!r}"
+        ) from exc
+
+
 def ensure_punkt():
     for name in ("punkt", "punkt_tab"):
         try:
@@ -136,9 +168,7 @@ def main():
         write_rows(args.output, human_rows + l0_rows)
 
     tokenizer = T5Tokenizer.from_pretrained(DEFAULT_TOKENIZER)
-    model = T5ForConditionalGeneration.from_pretrained(
-        args.model, load_in_8bit=True, device_map="auto"
-    )
+    model = load_model(args.model)
     model.eval()
 
     pending = []

@@ -1,0 +1,2 @@
+level,ai_n,human_n,roberta_score_auroc,roberta_score_tpr1pct,roberta_score_f1,roberta_score_precision,roberta_score_recall,binoculars_raw_auroc,binoculars_raw_tpr1pct,binoculars_raw_f1,binoculars_raw_precision,binoculars_raw_recall,gptzero_score_auroc,gptzero_score_tpr1pct,gptzero_score_f1,gptzero_score_precision,gptzero_score_recall
+L0,200,200,0.6522,0.05,0.0392,1.0,0.02,0.9112,0.755,0.8667,0.975,0.78,0.8467,0.415,0.0,0.0,0.0
