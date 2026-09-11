@@ -1,0 +1,8 @@
+{
+  "levels": [
+    {"level": "L1", "lex": 20, "order": 0},
+    {"level": "L2", "lex": 40, "order": 0},
+    {"level": "L3", "lex": 60, "order": 0},
+    {"level": "L4", "lex": 60, "order": 60}
+  ]
+}

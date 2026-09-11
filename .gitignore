@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+.env
+data/raw/*.parquet
+data/raw/*.csv
+data/pilot/*.csv
+data/qc_overlap.csv
+results/*.csv
+results/*.png
+*.bin
+*.safetensors
