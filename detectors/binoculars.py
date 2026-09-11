@@ -41,7 +41,7 @@ def entropy(p_logits, q_logits, encoding, pad_token_id):
 class BinocularsDetector(BaseDetector):
     def __init__(
         self,
-        observer_name_or_path: str = "TinyLlama/TinyLlama-1.1B",
+        observer_name_or_path: str = "TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T",
         performer_name_or_path: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         max_token_observed: int = 512,
         batch_size: int = 4,
