@@ -17,6 +17,7 @@ def main():
     args = parser.parse_args()
 
     df = pd.read_csv(args.input)
+    df["text"] = df["text"].fillna("").astype(str)
     ai = df[df["label"] == "ai"]
 
     l0 = ai[ai["paraphrase_level"] == "L0"]
@@ -32,7 +33,7 @@ def main():
                 "source_id": row["source_id"],
                 "level": level,
                 "overlap": jaccard_overlap(src_text, row["text"]),
-                "len_words": len(row["text"].split()),
+                "len_words": len(str(row["text"]).split()),
             })
         if records:
             rec_df = pd.DataFrame(records)

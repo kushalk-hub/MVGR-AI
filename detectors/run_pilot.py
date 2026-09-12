@@ -67,6 +67,10 @@ def main():
     args = parser.parse_args()
 
     df = pd.read_csv(args.input)
+    df["text"] = df["text"].fillna("").astype(str)
+    if "quality_status" in df.columns:
+        df = df[df["quality_status"] == "ok"].reset_index(drop=True)
+    print(f"pilot rows after drop non-ok: {len(df)}")
     result = df[["sample_id", "source_id", "text", "label", "paraphrase_level"]].copy()
 
     if "roberta" in args.detectors:

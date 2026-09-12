@@ -82,7 +82,7 @@ def paraphrase(model, tokenizer, text, lex, order, max_length, top_p, sent_inter
         window = " ".join(sentences[i:i + sent_interval])
         prompt = f"lexical = {lex}, order = {order} {prefix} <sent> {window} </sent>"
         prompt = clean_input(prompt)
-        inputs = tokenizer([prompt], return_tensors="pt")
+        inputs = tokenizer([prompt], return_tensors="pt", truncation=True, max_length=max_length)
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
         with torch.inference_mode():
             generated = model.generate(**inputs, do_sample=True, top_p=top_p, top_k=None, max_length=max_length)
