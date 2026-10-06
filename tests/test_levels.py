@@ -40,6 +40,13 @@ def test_validate_diversity_rejects_undocumented_values(value):
 
 
 def test_unit_seed_is_deterministic():
+    # The literal is a regression pin, not a magic number: it locks the
+    # zlib.crc32 derivation in place. Swapping crc32 for builtin hash() is
+    # invisible to every other test here -- hash() is deterministic within a
+    # process, collision-free on these pairs, and in range after the modulo --
+    # so without this pin the PYTHONHASHSEED-salted breakage it would cause
+    # would reach a GPU run unnoticed.
+    assert unit_seed(42, 7, "L2") == 282916338
     assert unit_seed(42, 7, "L2") == unit_seed(42, 7, "L2")
 
 
