@@ -1846,9 +1846,10 @@ quantization, and each level's diversity *and* the codes the model read.
 
 - [ ] **Step 4: Add a setup section**
 
-Insert this section after the `## Pipeline order` block in `AGENTS.md`:
+Insert this section after the `## Pipeline order` block in `AGENTS.md`. The outer
+fence is four backticks because the section itself contains a bash fence:
 
-```markdown
+````markdown
 ## VM setup (24 GB)
 
 Two interchangeable routes, both consuming `requirements.txt` and
@@ -1872,7 +1873,7 @@ on missing input. Run it directly any time to diagnose the environment.
 
 The Dockerfile's `CUDA_IMAGE` build ARG must match the host driver; check
 `nvcc --version` on the VM.
-```
+````
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
