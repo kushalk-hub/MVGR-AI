@@ -125,9 +125,6 @@ class _FakeTensor(list):
 class _FakeEncoding(dict):
     """Mimics a BatchEncoding closely enough for paraphrase()."""
 
-    def to(self, device):
-        return self
-
 
 class _FakeModel:
     """paraphrase() only touches .device and .generate()."""

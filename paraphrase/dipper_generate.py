@@ -3,7 +3,7 @@ import csv
 import json
 import os
 import sys
-import zlib
+from datetime import datetime, timezone
 
 import nltk
 import torch
@@ -126,6 +126,63 @@ def load_done_keys(path):
     return done
 
 
+class Tally:
+    """Counts per-unit generation outcomes so a run's health is visible."""
+
+    def __init__(self):
+        self._counts = {"ok": 0, "empty": 0, "error": 0}
+
+    def record(self, status):
+        if status not in self._counts:
+            raise KeyError(f"unknown status {status!r}")
+        self._counts[status] += 1
+
+    def as_dict(self):
+        return dict(self._counts)
+
+
+def build_manifest(run_seed, model, tokenizer, levels, top_p, max_length, sent_interval, tally):
+    """Assemble the generation provenance record.
+
+    Records each level as both the requested diversity and the similarity
+    control code the model actually read, so a dataset can be traced back to
+    the exact attack configuration that produced it.
+    """
+    import transformers
+
+    def _version(module_name):
+        try:
+            module = __import__(module_name)
+            return getattr(module, "__version__", "unknown")
+        except Exception as exc:
+            return f"unavailable ({type(exc).__name__})"
+
+    return {
+        "seed": run_seed,
+        "model": model,
+        "tokenizer": tokenizer,
+        "load_in_8bit": True,
+        "levels": [
+            {
+                "level": cfg["level"],
+                "lex_diversity": cfg["lex"],
+                "order_diversity": cfg["order"],
+                "lex_code": control_codes(cfg["lex"], cfg["order"])[0],
+                "order_code": control_codes(cfg["lex"], cfg["order"])[1],
+            }
+            for cfg in levels
+        ],
+        "top_p": top_p,
+        "max_length": max_length,
+        "sent_interval": sent_interval,
+        "tally": dict(tally),
+        "torch": torch.__version__,
+        "transformers": transformers.__version__,
+        "bitsandbytes": _version("bitsandbytes"),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def main():
     ensure_punkt()
     parser = argparse.ArgumentParser()
@@ -149,6 +206,7 @@ def main():
 
     levels = load_levels(args.levels)
     done = load_done_keys(args.output)
+    tally = Tally()
 
     if not os.path.exists(args.output):
         human_rows = [
@@ -207,6 +265,7 @@ def main():
             print(f"failed source={sid} level={cfg['level']}: {exc}")
             out = ""
             status = "error"
+        tally.record(status)
         rows = [{
             "sample_id": f"{sid}_{cfg['level']}",
             "source_id": sid,
@@ -220,7 +279,30 @@ def main():
         }]
         write_rows(args.output, rows)
 
+    manifest = build_manifest(
+        run_seed=args.seed,
+        model=args.model,
+        tokenizer=DEFAULT_TOKENIZER,
+        levels=levels,
+        top_p=args.top_p,
+        max_length=args.max_length,
+        sent_interval=args.sent_interval,
+        tally=tally.as_dict(),
+    )
+    manifest_path = os.path.join(
+        os.path.dirname(args.output) or ".", "generation_manifest.json"
+    )
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+    counts = tally.as_dict()
+    total = sum(counts.values()) or 1
     print(f"Paraphrase generation complete -> {args.output}")
+    print(
+        f"  ok={counts['ok']} empty={counts['empty']} error={counts['error']} "
+        f"({counts['error'] * 100.0 / total:.1f}% failed)"
+    )
+    print(f"  manifest -> {manifest_path}")
 
 
 if __name__ == "__main__":
