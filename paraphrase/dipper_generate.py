@@ -1,12 +1,19 @@
 import argparse
 import csv
 import json
-import nltk
 import os
+import sys
+import zlib
+
+import nltk
 import torch
 from nltk.tokenize import sent_tokenize
 from tqdm import tqdm
 from transformers import T5Tokenizer, T5ForConditionalGeneration
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from paraphrase.levels import control_codes, unit_seed
 
 DEFAULT_MODEL = "kalpeshk2011/dipper-paraphraser-xxl"
 DEFAULT_TOKENIZER = "google/t5-v1_1-xxl"
@@ -72,7 +79,13 @@ def clean_input(text):
     return " ".join(text.split())
 
 
-def paraphrase(model, tokenizer, text, lex, order, max_length, top_p, sent_interval):
+def paraphrase(model, tokenizer, text, lex_diversity, order_diversity, max_length, top_p, sent_interval):
+    """Paraphrase one text at the given DIVERSITY levels.
+
+    lex_diversity and order_diversity are desired diversity; they are
+    converted to the similarity control codes the DIPPER model reads.
+    """
+    lex_code, order_code = control_codes(lex_diversity, order_diversity)
     sentences = sent_tokenize(text)
     if not sentences:
         return ""
@@ -80,7 +93,7 @@ def paraphrase(model, tokenizer, text, lex, order, max_length, top_p, sent_inter
     outputs = []
     for i in range(0, len(sentences), sent_interval):
         window = " ".join(sentences[i:i + sent_interval])
-        prompt = f"lexical = {lex}, order = {order} {prefix} <sent> {window} </sent>"
+        prompt = f"lexical = {lex_code}, order = {order_code} {prefix} <sent> {window} </sent>"
         prompt = clean_input(prompt)
         inputs = tokenizer([prompt], return_tensors="pt", truncation=True, max_length=max_length)
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
@@ -124,6 +137,7 @@ def main():
     parser.add_argument("--top-p", type=float, default=0.75)
     parser.add_argument("--sent-interval", type=int, default=3)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     import pandas as pd
@@ -180,6 +194,9 @@ def main():
     for sid, text, cfg in tqdm(pending):
         if (str(sid), cfg["level"]) in done:
             continue
+        # Seed per unit, not once per run: each (source_id, level) then
+        # reproduces independently of traversal or resume order.
+        torch.manual_seed(unit_seed(args.seed, sid, cfg["level"]))
         try:
             out = paraphrase(
                 model, tokenizer, clean_input(text), cfg["lex"], cfg["order"],

@@ -1,8 +1,9 @@
 {
+  "_comment": "Values are DIVERSITY (0 = keep the words, 100 = rewrite everything). DIPPER reads similarity, so paraphrase/dipper_generate.py converts each to 100 - diversity via control_codes() in paraphrase/levels.py. Order diversity varies per level on purpose: it reorders sentences, which perturbs discourse structure, not just wording.",
   "levels": [
     {"level": "L1", "lex": 20, "order": 0},
-    {"level": "L2", "lex": 40, "order": 0},
-    {"level": "L3", "lex": 60, "order": 0},
+    {"level": "L2", "lex": 40, "order": 20},
+    {"level": "L3", "lex": 60, "order": 40},
     {"level": "L4", "lex": 60, "order": 60}
   ]
 }

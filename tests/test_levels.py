@@ -69,3 +69,129 @@ def test_unit_seed_is_within_torch_seed_range():
 def test_unit_seed_survives_source_id_type_changes():
     # source_id arrives as int from pandas but as str when read back from CSV
     assert unit_seed(42, 7, "L2") == unit_seed(42, "7", "L2")
+
+
+def test_ladder_config_is_expressed_as_diversity():
+    import json
+    from pathlib import Path
+
+    levels = json.loads(
+        Path("configs/dipper_levels.json").read_text(encoding="utf-8")
+    )["levels"]
+
+    by_level = {entry["level"]: entry for entry in levels}
+    assert set(by_level) == {"L1", "L2", "L3", "L4"}
+
+    assert (by_level["L1"]["lex"], by_level["L1"]["order"]) == (20, 0)
+    assert (by_level["L2"]["lex"], by_level["L2"]["order"]) == (40, 20)
+    assert (by_level["L3"]["lex"], by_level["L3"]["order"]) == (60, 40)
+    assert (by_level["L4"]["lex"], by_level["L4"]["order"]) == (60, 60)
+
+
+def test_ladder_is_monotone_on_both_axes():
+    import json
+    from pathlib import Path
+
+    levels = json.loads(
+        Path("configs/dipper_levels.json").read_text(encoding="utf-8")
+    )["levels"]
+    ordered = [entry for entry in sorted(levels, key=lambda e: e["level"])]
+
+    lex = [entry["lex"] for entry in ordered]
+    order = [entry["order"] for entry in ordered]
+    assert lex == sorted(lex)
+    assert order == sorted(order)
+
+
+def test_every_ladder_entry_is_a_valid_diversity_pair():
+    import json
+    from pathlib import Path
+
+    levels = json.loads(
+        Path("configs/dipper_levels.json").read_text(encoding="utf-8")
+    )["levels"]
+    for entry in levels:
+        # raises ValueError on any undocumented value
+        control_codes(entry["lex"], entry["order"])
+
+
+class _FakeTensor(list):
+    """paraphrase() calls .to() on each value, as real BatchEncoding values are tensors."""
+
+    def to(self, device):
+        return self
+
+
+class _FakeEncoding(dict):
+    """Mimics a BatchEncoding closely enough for paraphrase()."""
+
+    def to(self, device):
+        return self
+
+
+class _FakeModel:
+    """paraphrase() only touches .device and .generate()."""
+
+    device = "cpu"
+
+    def __init__(self, capture):
+        self._capture = capture
+
+    def generate(self, **kwargs):
+        return [[0, 1, 2]]
+
+
+class _FakeTokenizer:
+    def __init__(self, capture):
+        self._capture = capture
+
+    def __call__(self, texts, **kwargs):
+        self._capture["prompt"] = texts[0]
+        return _FakeEncoding(input_ids=_FakeTensor([0, 1, 2]))
+
+    def batch_decode(self, ids, **kwargs):
+        return ["rewritten"]
+
+
+def test_paraphrase_prompt_uses_similarity_codes(monkeypatch):
+    """The prompt must carry similarity codes, not the raw diversity values."""
+    from paraphrase import dipper_generate
+
+    capture = {}
+    monkeypatch.setattr(
+        dipper_generate, "sent_tokenize", lambda text: ["one two three."]
+    )
+
+    out = dipper_generate.paraphrase(
+        model=_FakeModel(capture),
+        tokenizer=_FakeTokenizer(capture),
+        text="one two three.",
+        lex_diversity=60,
+        order_diversity=60,
+        max_length=512,
+        top_p=0.75,
+        sent_interval=3,
+    )
+
+    assert "lexical = 40, order = 40" in capture["prompt"]
+    assert "lexical = 60, order = 60" not in capture["prompt"]
+    assert out == "rewritten"
+
+
+def test_paraphrase_rejects_undocumented_diversity(monkeypatch):
+    from paraphrase import dipper_generate
+
+    capture = {}
+    monkeypatch.setattr(dipper_generate, "sent_tokenize", lambda text: ["a b c."])
+
+    with pytest.raises(ValueError, match="lexical diversity"):
+        dipper_generate.paraphrase(
+            model=_FakeModel(capture),
+            tokenizer=_FakeTokenizer(capture),
+            text="a b c.",
+            lex_diversity=45,
+            order_diversity=0,
+            max_length=512,
+            top_p=0.75,
+            sent_interval=3,
+        )
