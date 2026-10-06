@@ -20,6 +20,7 @@
 - Do **not** implement equal-length truncation. It is an evaluation-stage requirement, explicitly out of scope.
 - Never silently loosen a pinned dependency. Report resolution failures with the available options.
 - Every script is run from the repo root and takes cwd-relative paths.
+- This plan is developed on **Windows** but the artifacts target a **Linux VM**. Tests asserting POSIX-local properties (the exec bit, or driving `bash` with a temp-dir stub) must be guarded with `@pytest.mark.skipif(os.name == "nt")` so they skip locally and execute in full on the VM during Task 9. Content-only assertions run everywhere.
 - `data/raw/*.csv`, `data/pilot/*.csv`, and `results/*.csv|*.png` are gitignored. Do not force-add generated data.
 - Commit after every task. Do not amend.
 
@@ -1283,21 +1284,44 @@ import pytest
 SETUP_ENV = Path("setup/setup_env.sh")
 RUN_GENERATION = Path("setup/run_generation.sh")
 
+# The scripts are POSIX and target a Linux VM. These assertions check
+# POSIX-local properties -- the exec bit, and driving bash with a temp-dir
+# interpreter stub -- that a Windows checkout cannot satisfy: the filesystem
+# carries no exec bit (core.fileMode=false) and `bash` resolves to WSL, which
+# cannot see Windows temp paths. They run in full on the VM (Task 9); on
+# Windows, Task 6 verifies via `bash -n` plus these content checks.
+posix_only = pytest.mark.skipif(
+    os.name == "nt", reason="POSIX-local assertions; run on the Linux VM"
+)
+
 
 def read(path):
     return path.read_text(encoding="utf-8")
 
 
-def test_setup_env_exists_and_is_executable():
+def test_setup_env_exists():
     assert SETUP_ENV.exists()
+
+
+def test_run_generation_exists():
+    assert RUN_GENERATION.exists()
+
+
+@posix_only
+def test_setup_env_is_executable():
     mode = SETUP_ENV.stat().st_mode
     assert mode & stat.S_IXUSR, "setup_env.sh must be executable"
 
 
-def test_run_generation_exists_and_is_executable():
-    assert RUN_GENERATION.exists()
+@posix_only
+def test_run_generation_is_executable():
     mode = RUN_GENERATION.stat().st_mode
     assert mode & stat.S_IXUSR, "run_generation.sh must be executable"
+
+
+def test_setup_env_starts_with_a_shebang():
+    for script in (SETUP_ENV, RUN_GENERATION):
+        assert read(script).startswith("#!/usr/bin/env bash")
 
 
 def test_setup_env_fails_fast_on_bad_python():
@@ -1334,6 +1358,11 @@ def test_run_generation_stops_when_preflight_fails(tmp_path):
     )
     assert result.returncode != 0
     assert "STUB RAN" not in result.stdout
+```
+
+Mark `test_setup_env_fails_fast_on_bad_python` and
+`test_run_generation_stops_when_preflight_fails` with `@posix_only` as well,
+since both invoke `bash` with a stubbed interpreter.
 
 
 def test_run_generation_runs_the_full_chain_in_order():
@@ -1363,13 +1392,26 @@ def test_setup_env_reports_a_resolver_failure_instead_of_retrying():
     assert "--no-deps" not in script
     assert "uninstall" not in script
     assert "pip install torch" not in script
+
+
+def test_setup_env_respects_an_explicit_python_flag():
+    assert "--python" in read(SETUP_ENV)
 ```
+
+Note which tests are platform-independent: `test_setup_env_exists`,
+`test_run_generation_exists`, `test_setup_env_starts_with_a_shebang`,
+`test_run_generation_runs_the_full_chain_in_order`,
+`test_run_generation_honours_limit_and_seed_env`, and
+`test_setup_env_reports_a_resolver_failure_instead_of_retrying` all read file
+contents only, so they run everywhere. The four `@posix_only` tests are the
+ones that execute or stat the scripts.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python -m pytest tests/test_setup_scripts.py -v`
 
-Expected: FAIL — `assert SETUP_ENV.exists()` fails; the files do not exist yet.
+Expected: FAIL — `test_setup_env_exists` fails; the files do not exist yet.
+On Windows the `@posix_only` tests report as skipped rather than failing.
 
 - [ ] **Step 3: Create `setup/setup_env.sh`**
 
@@ -1494,35 +1536,44 @@ echo "    data/pilot/generation_manifest.json"
 echo "    data/qc_overlap.csv"
 ```
 
-- [ ] **Step 5: Mark both executable**
+- [ ] **Step 5: Mark both executable (POSIX hosts only)**
 
-Run: `bash -c "chmod +x setup/setup_env.sh setup/run_generation.sh"`
+Run on Linux/macOS/VM: `bash -c "chmod +x setup/setup_env.sh setup/run_generation.sh"`
+
+On Windows the exec bit cannot be set and git has `core.fileMode=false`, so
+skip this step; the `@posix_only` tests skip correspondingly and Task 9 confirms
+executability on the VM.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `python -m pytest tests/test_setup_scripts.py -v`
 
-Expected: PASS — all tests green.
+Expected: PASS, with the four `@posix_only` tests reported as skipped on Windows.
 
 - [ ] **Step 7: Syntax-check both scripts**
 
 Run: `bash -n setup/setup_env.sh && bash -n setup/run_generation.sh && echo "shell syntax OK"`
 
-Expected: prints `shell syntax OK`
+Expected: prints `shell syntax OK`. WSL's `bash` works for this because it maps
+the Windows cwd into `/mnt/...`.
 
 - [ ] **Step 8: Verify the chain aborts on a failing stage**
 
-Run: `bash setup/run_generation.sh`
+Run on the VM, or on any POSIX host with a GPU: `bash setup/run_generation.sh`
 
-Expected: fails at the preflight stage on a machine without adequate VRAM or
-CUDA, and does **not** reach `prepare_pilot.py`. This proves the fail-fast
-behaviour on a real machine, matching the stubbed test.
+Expected: fails at the preflight stage when VRAM or CUDA is inadequate, and does
+**not** reach `prepare_pilot.py`. This proves the fail-fast behaviour on a real
+machine, matching the stubbed test.
+
+If you need to verify the abort locally on Windows, run it under WSL from
+`/mnt/d/MVGR-AI` instead — the stubbed test is skipped there, so this is the only
+local coverage of the abort path.
 
 - [ ] **Step 9: Commit**
 
 ```bash
 git add setup/setup_env.sh setup/run_generation.sh tests/test_setup_scripts.py
-git chmod +x setup/setup_env.sh setup/run_generation.sh
+git add --chmod=+x setup/setup_env.sh setup/run_generation.sh 2>/dev/null || true
 git commit -m "feat: add native setup path and fail-fast generation runner
 
 setup_env.sh builds the venv, installs pinned requirements, downloads
