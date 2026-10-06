@@ -141,8 +141,41 @@ class Tally:
         return dict(self._counts)
 
 
+def is_generated_row(row):
+    """True for a paraphrased unit: an ai row above L0.
+
+    Human rows are excluded by label and the seeded L0 rows by level. Both
+    carry quality_status="ok", but neither is a generated unit.
+    """
+    return row["label"] == "ai" and row["paraphrase_level"] != "L0"
+
+
+def tally_dataset(path):
+    """Count outcomes across every generated row in the output CSV.
+
+    Dataset-scoped rather than invocation-scoped: a resumed run skips the
+    units already on disk, so counting only what this invocation produced
+    would report zero for a dataset that is nearly finished.
+    """
+    if not os.path.exists(path):
+        return Tally().as_dict()
+
+    with open(path, "r", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    tally = Tally()
+    for row in rows:
+        if is_generated_row(row):
+            tally.record(row["quality_status"])
+    return tally.as_dict()
+
+
 def build_manifest(run_seed, model, tokenizer, levels, top_p, max_length, sent_interval, tally):
     """Assemble the generation provenance record.
+
+    `tally` is dataset-scoped: it counts every generated paraphrase row in the
+    output CSV, not just the units this invocation produced, so the record
+    survives a resumed run.
 
     Records each level as both the requested diversity and the similarity
     control code the model actually read, so a dataset can be traced back to
@@ -279,21 +312,26 @@ def main():
         }]
         write_rows(args.output, rows)
 
-    manifest = build_manifest(
-        run_seed=args.seed,
-        model=args.model,
-        tokenizer=DEFAULT_TOKENIZER,
-        levels=levels,
-        top_p=args.top_p,
-        max_length=args.max_length,
-        sent_interval=args.sent_interval,
-        tally=tally.as_dict(),
-    )
     manifest_path = os.path.join(
         os.path.dirname(args.output) or ".", "generation_manifest.json"
     )
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
+    written = False
+    try:
+        manifest = build_manifest(
+            run_seed=args.seed,
+            model=args.model,
+            tokenizer=DEFAULT_TOKENIZER,
+            levels=levels,
+            top_p=args.top_p,
+            max_length=args.max_length,
+            sent_interval=args.sent_interval,
+            tally=tally_dataset(args.output),
+        )
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        written = True
+    except Exception as exc:
+        print(f"warning: manifest not written -> {manifest_path}: {exc}")
 
     counts = tally.as_dict()
     total = sum(counts.values()) or 1
@@ -302,7 +340,8 @@ def main():
         f"  ok={counts['ok']} empty={counts['empty']} error={counts['error']} "
         f"({counts['error'] * 100.0 / total:.1f}% failed)"
     )
-    print(f"  manifest -> {manifest_path}")
+    if written:
+        print(f"  manifest -> {manifest_path}")
 
 
 if __name__ == "__main__":
