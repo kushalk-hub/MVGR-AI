@@ -95,7 +95,7 @@ def probe():
         properties = torch.cuda.get_device_properties(0)
         device_name = properties.name
         total_vram_gb = properties.total_memory / (1024**3)
-        free_vram_gb = total_vram_gb - torch.cuda.mem_get_info(0)[0] / (1024**3)
+        free_vram_gb = torch.cuda.mem_get_info(0)[0] / (1024**3)
 
     try:
         import bitsandbytes

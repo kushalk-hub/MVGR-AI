@@ -73,3 +73,19 @@ def test_check_fails_on_insufficient_vram(monkeypatch, capsys):
 def test_required_vram_for_dipper_int8_is_eleven_gib():
     # DIPPER XXL in int8 is ~11GB; anything under this cannot load.
     assert preflight.REQUIRED_VRAM_GB <= 12.0
+
+
+def test_check_fails_on_the_vram_gate_itself(monkeypatch, capsys):
+    fake = preflight.Environment(
+        torch_version="2.5.1",
+        transformers_version="4.44.0",
+        bitsandbytes_version="0.43.0",
+        cuda_available=True,
+        device_name="NVIDIA GTX 1650",
+        total_vram_gb=10.0,
+        free_vram_gb=9.5,
+        model_loads=False,
+        loaded_vram_gb=0.0,
+    )
+    assert preflight.check(fake) != 0
+    assert "below the" in capsys.readouterr().out
