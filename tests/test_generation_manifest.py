@@ -157,7 +157,10 @@ def test_manifest_tally_survives_a_resumed_run(tmp_path, monkeypatch, capsys):
     dipper_generate.main()
 
     rows_after = capsys.readouterr().out
-    assert "ok=0 empty=0 error=0" in rows_after
+    # Invocation-scoped tally (this run did nothing) beside the dataset-scoped
+    # tally (everything on disk) — the labels keep a resumed run from looking clean.
+    assert "this run: ok=0 empty=0 error=0" in rows_after
+    assert "dataset total: ok=2 empty=1 error=1" in rows_after
 
     resumed = json.loads(
         (tmp_path / "generation_manifest.json").read_text(encoding="utf-8")

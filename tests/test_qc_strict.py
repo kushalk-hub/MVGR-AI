@@ -3,14 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from paraphrase.qc import monotonicity_violations
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-# Tolerance guards against float noise; equal values pass.
-TOL = 1e-9
 
 
 def rows(*pairs):

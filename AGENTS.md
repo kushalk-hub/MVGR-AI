@@ -63,6 +63,7 @@ docker run --gpus all --rm -v "$PWD/data:/work/paragon/data" paragon-stage1
 ```
 
 `DIPPER_LIMIT` and `DIPPER_SEED` are read from the environment.
+`--seed` / `DIPPER_SEED` default to 42 when neither is given.
 `setup/preflight.py` verifies CUDA, VRAM headroom, bitsandbytes, and an
 actual int8 model load, and exits non-zero with a fix-it message — the
 inverse of `calibrate_binoculars.py` and `evaluate.py`, which return exit 0
@@ -147,6 +148,9 @@ L-level tables; `evaluate.py` pairs each level against the shared human set.
 `label`, `paraphrase_level`, `lex_control`, `order_control`, and
 `parent_sample_id` are **metadata, never classifier features** (§23.4). All
 paraphrase descendants of one `source_id` belong to the same split.
+The `lex_control`/`order_control` columns store DIVERSITY values from
+`configs/dipper_levels.json`; the similarity codes the model read live only
+in `data/pilot/generation_manifest.json`.
 
 `data/raw/*.csv`, `data/pilot/*.csv`, and `results/*.csv|*.png` are gitignored —
 only `.gitkeep` is tracked. A fresh clone has no data and no results, so any

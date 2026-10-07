@@ -3,9 +3,8 @@
 #
 # preflight -> prepare_pilot -> dipper_generate -> qc --strict
 #
-# Every stage must succeed. set -e plus an explicit check after each call
-# means a broken link stops the chain instead of producing a partial
-# dataset that looks complete.
+# Every stage must succeed. set -euo pipefail means a broken link stops
+# the chain instead of producing a partial dataset that looks complete.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

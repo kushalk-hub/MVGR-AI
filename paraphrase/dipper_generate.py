@@ -305,6 +305,8 @@ def main():
             "text": out,
             "label": "ai",
             "paraphrase_level": cfg["level"],
+            # NOTE: lex_control/order_control store DIVERSITY values from the
+            # config; the similarity codes the model read live only in the manifest.
             "lex_control": cfg["lex"],
             "order_control": cfg["order"],
             "parent_sample_id": f"{sid}_L0",
@@ -316,7 +318,9 @@ def main():
         os.path.dirname(args.output) or ".", "generation_manifest.json"
     )
     written = False
+    dataset_tally = None
     try:
+        dataset_tally = tally_dataset(args.output)
         manifest = build_manifest(
             run_seed=args.seed,
             model=args.model,
@@ -325,7 +329,7 @@ def main():
             top_p=args.top_p,
             max_length=args.max_length,
             sent_interval=args.sent_interval,
-            tally=tally_dataset(args.output),
+            tally=dataset_tally,
         )
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
@@ -337,9 +341,14 @@ def main():
     total = sum(counts.values()) or 1
     print(f"Paraphrase generation complete -> {args.output}")
     print(
-        f"  ok={counts['ok']} empty={counts['empty']} error={counts['error']} "
+        f"  this run: ok={counts['ok']} empty={counts['empty']} error={counts['error']} "
         f"({counts['error'] * 100.0 / total:.1f}% failed)"
     )
+    if dataset_tally is not None:
+        print(
+            f"  dataset total: ok={dataset_tally['ok']} "
+            f"empty={dataset_tally['empty']} error={dataset_tally['error']}"
+        )
     if written:
         print(f"  manifest -> {manifest_path}")
 
