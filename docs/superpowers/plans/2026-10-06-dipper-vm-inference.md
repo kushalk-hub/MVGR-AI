@@ -1324,6 +1324,7 @@ def test_setup_env_starts_with_a_shebang():
         assert read(script).startswith("#!/usr/bin/env bash")
 
 
+@posix_only
 def test_setup_env_fails_fast_on_bad_python():
     result = subprocess.run(
         ["bash", str(SETUP_ENV), "--python", "/nonexistent/python"],
@@ -1333,6 +1334,7 @@ def test_setup_env_fails_fast_on_bad_python():
     assert result.returncode != 0
 
 
+@posix_only
 def test_run_generation_stops_when_preflight_fails(tmp_path):
     """A broken preflight must abort the chain, not let generation start."""
     fake_bin = tmp_path / "bin"
@@ -1358,11 +1360,6 @@ def test_run_generation_stops_when_preflight_fails(tmp_path):
     )
     assert result.returncode != 0
     assert "STUB RAN" not in result.stdout
-```
-
-Mark `test_setup_env_fails_fast_on_bad_python` and
-`test_run_generation_stops_when_preflight_fails` with `@posix_only` as well,
-since both invoke `bash` with a stubbed interpreter.
 
 
 def test_run_generation_runs_the_full_chain_in_order():
