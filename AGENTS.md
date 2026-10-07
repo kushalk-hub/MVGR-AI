@@ -47,6 +47,30 @@ python evaluation/evaluate.py                      # -> results/degradation_plot
 chain looks like a clean run. The one hard guard is `evaluate.py`'s missing-level
 check, which `sys.exit(1)s` when any of L0–L4 is absent.
 
+## VM setup (24 GB)
+
+Two interchangeable routes, both consuming `requirements.txt` and
+`setup/preflight.py` so they cannot drift. If one fails, use the other.
+
+```bash
+# native (primary)
+bash setup/setup_env.sh
+bash setup/run_generation.sh
+
+# container (fallback)
+docker build -t paragon-stage1 .
+docker run --gpus all --rm -v "$PWD/data:/work/paragon/data" paragon-stage1
+```
+
+`DIPPER_LIMIT` and `DIPPER_SEED` are read from the environment.
+`setup/preflight.py` verifies CUDA, VRAM headroom, bitsandbytes, and an
+actual int8 model load, and exits non-zero with a fix-it message — the
+inverse of `calibrate_binoculars.py` and `evaluate.py`, which return exit 0
+on missing input. Run it directly any time to diagnose the environment.
+
+The Dockerfile's `CUDA_IMAGE` build ARG must match the host driver; check
+`nvcc --version` on the VM.
+
 ## DIPPER generation is resumable and append-only
 
 `dipper_generate.py` writes humans + L0 only when the output CSV does not exist,
@@ -56,9 +80,38 @@ regenerate existing rows — delete `data/pilot/pilot_dataset.csv` to start over
 `--limit` trims AI sources only, so a limited smoke run still gets the full
 human set.
 
-Only L4 exercises order diversity (L1–L3 are lex 20/40/60 with order 0), so the
-L1→L3 axis is purely lexical. `paraphrase/qc.py` is the check that Jaccard
-overlap against L0 actually falls as levels increase.
+### The two scales: diversity vs similarity
+
+**`configs/dipper_levels.json` holds DIVERSITY. The DIPPER model reads
+SIMILARITY.** For diversity X, feed the model `100 - X`. The paper's own
+`L60-O60` means control codes `lex = 40, order = 40`.
+
+The conversion lives in exactly one place — `control_codes()` in
+`paraphrase/levels.py` — and a test pins it. Passing a raw diversity value
+into the prompt inverts the whole ladder, which `qc.py --strict` catches
+because overlap against L0 then *rises* with the level number.
+
+Current ladder, all inside the paper's validated grid:
+
+| Level | Diversity L | Diversity O | Control codes |
+|---|---|---|---|
+| L1 | 20 | 0 | 80, 100 |
+| L2 | 40 | 20 | 60, 80 |
+| L3 | 60 | 40 | 40, 60 |
+| L4 | 60 | 60 | 40, 40 |
+
+Order diversity varies per level on purpose: it reorders sentences, so it
+perturbs discourse structure rather than just wording — the signal the
+graph/GNN branch will eventually test.
+
+### Seeding and provenance
+
+Generation is seeded per `(source_id, level)` unit via `unit_seed()`
+(crc32 of `run_seed|source_id|level`), so a unit reproduces independently
+of traversal or resume order. `crc32` rather than `hash()` because `hash()`
+on strings is salted per process by `PYTHONHASHSEED`. Each run writes
+`data/pilot/generation_manifest.json` with the seed, model, tokenizer,
+quantization, and each level's diversity *and* the codes the model read.
 
 ## Score direction
 
