@@ -1,0 +1,128 @@
+# MVGR-AI graph feature extraction configuration.
+#
+# Owner: Person 2 (graphs/storage) with Person 1 (features/evaluation) review.
+#
+# Credentials are NEVER stored in this file. Only the NAMES of environment
+# variables are referenced; the values are read from the environment or from the
+# optional .env file at the repository root. Never hardcode a URI, user or
+# password here.
+
+neo4j:
+  uri_env: NEO4J_URI
+  user_env: NEO4J_USER
+  password_env: NEO4J_PASSWORD
+  database_env: NEO4J_DATABASE
+  database_default: neo4j
+  # Optional dotenv file, resolved relative to the repository root. It is read
+  # only if present; missing values fall back to the process environment.
+  dotenv_file: .env
+  connection_timeout_seconds: 30
+  max_retries: 3
+  retry_backoff_seconds: 2
+
+graph:
+  # The pilot build already resident in Neo4j. Do not re-upload.
+  build_id: mvgr_pilot500_20261114_spacy_multiview_r1
+  expected_samples: 500
+  expected_graphs: 1000
+  expected_nodes: 104322
+  # 254,028 = HAS_GRAPH 1,000 + HAS_TOKEN 102,822 + CO_OCCURS 101,322 + DEPENDS_ON 48,884.
+  # The master prompt quotes 253,528 "projected relationships", but that figure is a
+  # 500-short arithmetic slip in the loader: it counts one HAS_GRAPH per SAMPLE (500)
+  # instead of one per GRAPH (1,000). The live database holds 254,028, which is the
+  # internally consistent total, so that is the expectation here. See the audit report.
+  expected_relationships: 254028
+  # Per-view structural edge totals, read from the pilot manifest. The lexical
+  # (CO_OCCURS) and syntactic (DEPENDS_ON) views are counted separately because
+  # a single combined total cannot detect a view swap.
+  expected_lexical_edges: 101322
+  expected_syntactic_edges: 48884
+  sample_label: Sample
+  graph_label: TextGraph
+  token_label: TokenOccurrence
+  views:
+    lexical: lexical_cooccurrence
+    syntactic: syntactic_dependency
+  # Relationship types, discovered from the live database. Never assumed.
+  relationships:
+    sample_to_graph: HAS_GRAPH
+    graph_to_token: HAS_TOKEN
+    lexical_edge: CO_OCCURS
+    syntactic_edge: DEPENDS_ON
+
+extraction:
+  # Samples fetched per round trip. Three batched queries per chunk, so the
+  # 500-sample pilot needs ~20 chunks and no N+1 access.
+  batch_size: 25
+  # The token/edge results are paged with SKIP/LIMIT so a single Bolt result
+  # stays small: the Aura endpoint corrupts TLS records on large transfers over
+  # this network (a 605-row page is fine; an ~1,800-row page fails). Paging is
+  # row-bounded, not per-graph, because a single graph can hold >2,000 tokens.
+  token_page_rows: 500
+  edge_page_rows: 800
+  # Computational guards. Features that would exceed a guard are emitted as
+  # null rather than approximated, exactly like features.v1.
+  max_nodes_for_exact_connectivity: 2000
+  max_nodes_for_shortest_path: 5000
+  max_nodes_for_clustering: 20000
+  degree_histogram_bins: 10
+  top_dependency_relations: 15
+  # Streaming cache so an interrupted run resumes instead of restarting.
+  cache_dir: data/derived/graph_feature_cache
+  resume: true
+  log_level: INFO
+
+outputs:
+  graph_features: data/processed/graph_features.csv
+  sample_multiview_features: data/processed/sample_multiview_features.csv
+  node_features: data/processed/node_features.csv
+  feature_schema: data/processed/feature_schema.json
+  embeddings: data/processed/graph_embeddings.npy
+  # Phase E outputs (features and metadata stay separate to avoid target leakage).
+  ml_features: data/processed/ml_ready_features.csv
+  ml_metadata: data/processed/ml_ready_metadata.csv
+  ml_report: data/processed/ml_dataset_report.json
+  verification_json: outputs/graph_audit/neo4j_verification_report.json
+  verification_md: outputs/graph_audit/neo4j_verification_report.md
+  feature_report_json: outputs/graph_audit/feature_extraction_report.json
+  feature_report_md: outputs/graph_audit/feature_extraction_report.md
+
+validation:
+  require_two_views_per_sample: true
+  require_unique_sample_ids: true
+  require_build_id_consistency: true
+  require_no_cross_graph_edges: true
+  require_no_orphan_tokens: true
+  require_no_missing_relationships: true
+  # Feature-table gates used by prepare_ml_dataset.
+  max_missing_fraction: 0.30
+  constant_feature_tolerance: 1.0e-12
+  high_correlation_threshold: 0.98
+
+leakage:
+  # A FORMAL training split requires an approved manifest. The pilot's preserved
+  # split column is for pipeline validation only and is never a formal split.
+  require_approved_manifest_for_formal_split: true
+  approved_manifest_pointer: data/manifests/split_manifest.approved.json
+  pilot_split_column: split
+  # Columns that identify a row or its provenance. They must never become model
+  # input features.
+  identifier_columns:
+    - sample_id
+    - graph_id
+    - build_id
+    - source_row_id
+    - group_id
+  # Columns that carry the target or evaluation metadata. They are preserved for
+  # stratification and label joining but are never model inputs.
+  metadata_columns:
+    - label
+    - source_dataset
+    - source_task
+    - text_type
+    - graph_category
+    - paraphrase_status
+    - domain
+    - ai_model
+    - padben_split
+    - split

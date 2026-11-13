@@ -1,0 +1,108 @@
+# MVGR-AI graph specification and build configuration.
+# Person 2 owns this file. graph_spec_version must be bumped for any semantic
+# change (node/edge definition, normalization, tokenizer, window, direction).
+
+graph_spec_version: "1.0.0"
+export:
+  format: jsonl
+  schema: shared/contracts/graph_schema.json
+  # One JSONL file per view, plus one manifest. No target metadata is written
+  # per sample; provenance lives only in the build manifest.
+  layout: "{build_id}/{graph_view}.jsonl"
+  compress: false
+
+shared:
+  text_normalization: nfkc
+  tokenizer_version: "tokenizer.v1"
+  max_nodes: 20000
+  max_edges: 400000
+  empty_text_policy: emit_empty_graph_record
+  undefined_metric_policy: null
+  # Node identifiers are local to one sample graph. Cross-sample edges are
+  # forbidden unless a future spec version explicitly justifies them.
+
+views:
+  lexical:
+    enabled: true
+    unit: unique_token_per_sample
+    tokenization:
+      pattern: "[^\\W_]+(?:['\u2019-][^\\W_]+)*"
+      lowercase: true
+      min_token_chars: 1
+      keep_numbers: true
+      punctuation: excluded
+      stopwords: keep
+      stopword_flagging: true
+      emoji_and_symbols: excluded
+    node:
+      key: normalized_token
+      type: token
+      attributes: [position, is_stopword]
+    edge:
+      type: cooccurrence
+      direction: undirected
+      scope: sentence
+      window: 5
+      distance_definition: absolute_token_position_difference
+      weight: cooccurrence_count
+      self_loops: false
+      duplicate_edges: aggregate
+    repeated_tokens: >
+      One node per distinct normalized token per sample. The node position is
+      the first occurrence. Occurrence frequency is not stored as a node
+      feature; it is recoverable from edge weights and from the deterministic
+      token statistics.
+    truncation: >
+      If a graph exceeds shared.max_nodes, keep the most frequent tokens
+      (ties broken alphabetically), rebuild edges on the kept set and set
+      truncated=true. Never truncate silently.
+    edge_cases:
+      empty_text: empty_graph
+      single_token: one_node_zero_edges
+      all_punctuation: empty_graph
+  syntactic:
+    enabled: true
+    unit: token_occurrence
+    backend: spacy
+    model: en_core_web_sm
+    parser: dependency
+    node:
+      key: token_index
+      exclude: [punctuation, whitespace, symbol]
+      attributes: [pos, sentence_index, position]
+    edge:
+      type: dependency
+      direction: head_to_child
+      weight: 1.0
+      label_field: dependency
+      distance: absolute_token_position_difference
+      sentence_scope: enforced_by_parser
+    edge_cases:
+      empty_text: empty_graph
+      parser_unavailable: fail_build
+      parse_failure: record_in_failure_report
+    notes: >
+      The syntactic view must never silently fall back to the lexical view.
+      A missing parser is a build failure with an explicit reason.
+
+neo4j:
+  database: neo4j
+  namespace_prefix: mvgr
+  # Every build gets its own namespace; earlier builds are never overwritten.
+  build_namespace: "{namespace_prefix}:{build_id}"
+  constraints:
+    # Synthetic uid keys keep builds isolated and work on Neo4j Community,
+    # where composite uniqueness constraints are not available.
+    - "CREATE CONSTRAINT graph_build_key IF NOT EXISTS FOR (b:GraphBuild) REQUIRE b.build_id IS UNIQUE"
+    - "CREATE CONSTRAINT sample_uid IF NOT EXISTS FOR (s:Sample) REQUIRE s.uid IS UNIQUE"
+    - "CREATE CONSTRAINT token_uid IF NOT EXISTS FOR (t:Token) REQUIRE t.uid IS UNIQUE"
+  indexes:
+    - "CREATE INDEX sample_build IF NOT EXISTS FOR (s:Sample) ON (s.build_id)"
+    - "CREATE INDEX sample_build_sample IF NOT EXISTS FOR (s:Sample) ON (s.sample_id)"
+    - "CREATE INDEX token_build IF NOT EXISTS FOR (t:Token) ON (t.build_id)"
+    - "CREATE INDEX token_token IF NOT EXISTS FOR (t:Token) ON (t.token)"
+  batch_size: 500
+  transaction_retries: 3
+  idempotent: true
+  verify_coverage: true
+  capacity_sample_size: 1000

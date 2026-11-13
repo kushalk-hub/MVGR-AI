@@ -1,0 +1,10 @@
+source_dataset,source_task,authorship_comparable,condition,condition_confidence,status,caveat
+BiScope,BiScope,True,row_level_paraphrase_flag,medium,documented,"BiScope supplies original and paraphrased rows. The paraphrased flag is a row property, not a family link: the paraphrased counterpart of a given original text is not identified by the export. Family lineage therefore cannot be recovered from the current dataset; only exact-text grouping is possible. BiScope paraphrased rows are all label=1 in the current build.
+"
+PADBen,sentence-pair-task1,True,paraphrased,medium,needs_confirmation,
+PADBen,sentence-pair-task2,True,unknown,low,needs_confirmation,
+PADBen,sentence-pair-task5,True,mixed_original_and_deep_paraphrase,medium,needs_confirmation,"In this build every deep_paraphrased row is label=1 and every original row is label=0, so condition and label are perfectly confounded inside this task.
+"
+PADBen,exhaustive-task1,True,paraphrased,medium,needs_confirmation,
+PADBen,exhaustive-task2,True,unknown,low,needs_confirmation,
+PADBen,exhaustive-task5,True,deep_paraphrased,medium,needs_confirmation,deep_paraphrased rows are all label=1.

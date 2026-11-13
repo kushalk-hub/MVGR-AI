@@ -1,0 +1,5 @@
+-r base.txt
+networkx>=3.3
+# Only needed for the syntactic graph view. Install the model separately:
+#   python -m spacy download en_core_web_sm
+spacy>=3.7

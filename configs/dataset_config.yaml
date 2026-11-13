@@ -1,0 +1,151 @@
+# MVGR-AI dataset contract.
+# Person 1 owns this file. Changes require a version bump in dataset.version
+# and an entry in docs/DECISIONS.md. Paths are relative to the repository root.
+
+dataset:
+  version: "mvgr-ai/2026-11-13"
+  canonical:
+    parquet: data/processed/mvgr_ai_combined.parquet
+    csv: data/processed/mvgr_ai_combined.csv
+    prepared_by: dataset_preparation.py
+    prepared_by_version: "legacy-0.1"
+  # Immutable upstream copy. The contract copy under data/processed must carry
+  # the same digest; the audit fails closed if they diverge. Never edit either
+  # file in place.
+  source_parquet: datasets/processed/mvgr_ai_combined.parquet
+  source_csv: datasets/processed/mvgr_ai_combined.csv
+  # Filled by `mvgr audit`; never hand-edited. Audit fails if the file no
+  # longer matches the recorded digest.
+  sha256: null
+  row_count: 128709
+  text_column: text
+  id_column: sample_id
+  label_column: label
+  label_semantics:
+    "0": human_authored
+    "1": ai_authored
+  label_is_not:
+    - paraphrase_status
+    - paraphrase_depth
+    - text_type
+    - domain
+    - source_dataset
+
+sources:
+  BiScope:
+    role: pooled_authorship
+    domain_field: domain
+    generator_field: ai_model
+    lineage_field: null
+    lineage_resolution: unresolved_exact_text_only
+    notes: >
+      BiScope supplies original and paraphrased rows. The paraphrased flag is a
+      row property, not a family link: the paraphrased counterpart of a given
+      original text is not identified by the export. Family lineage therefore
+      cannot be recovered from the current dataset; only exact-text grouping is
+      possible. BiScope paraphrased rows are all label=1 in the current build.
+  PADBen:
+    role: pooled_authorship_pending_task_confirmation
+    lineage_field: group_id
+    lineage_resolution: pair_level
+    notes: >
+      PADBen sentence-pair rows place both members of a pair in one group_id,
+      so the pair stays in one split. The meaning of each task must be
+      confirmed against the PADBen dataset card before pooled training; do not
+      infer task semantics from the label distribution.
+    tasks:
+      sentence-pair-task1:
+        authorship_comparable: true
+        condition: paraphrased
+        condition_confidence: medium
+        status: needs_confirmation
+      sentence-pair-task2:
+        authorship_comparable: true
+        condition: unknown
+        condition_confidence: low
+        status: needs_confirmation
+      sentence-pair-task5:
+        authorship_comparable: true
+        condition: mixed_original_and_deep_paraphrase
+        condition_confidence: medium
+        status: needs_confirmation
+        caveat: >
+          In this build every deep_paraphrased row is label=1 and every
+          original row is label=0, so condition and label are perfectly
+          confounded inside this task.
+      exhaustive-task1:
+        authorship_comparable: true
+        condition: paraphrased
+        condition_confidence: medium
+        status: needs_confirmation
+      exhaustive-task2:
+        authorship_comparable: true
+        condition: unknown
+        condition_confidence: low
+        status: needs_confirmation
+      exhaustive-task5:
+        authorship_comparable: true
+        condition: deep_paraphrased
+        condition_confidence: medium
+        status: needs_confirmation
+        caveat: deep_paraphrased rows are all label=1.
+
+tasks:
+  # The audit treats the union of these tasks as the pooled dataset but never
+  # hides per-task results behind a pooled number.
+  pooled_evaluation: true
+  report_strata:
+    - source_dataset
+    - source_task
+    - text_type
+  cross_source_evaluation:
+    enabled: true
+    held_out_sources: [BiScope, PADBen]
+  condition_controlled_comparison:
+    enabled: true
+    description: >
+      Compare AI original vs AI paraphrased vs AI deeply paraphrased within a
+      single source/task. Human-vs-AI comparisons that vary condition and label
+      together are reported as confounded, never as paraphrase effects.
+
+lineage:
+  # Person 1-owned. group_id is the only family signal present in the current
+  # build; it is pair-level for PADBen and exact-text-only for BiScope.
+  source_group_column: group_id
+  family_key: family_id
+  require_family_disjoint_splits: true
+  unresolved_policy: block_pooled_test_claims
+  min_family_size: 1
+
+splitting:
+  policy_version: "split.v1"
+  seed: 42
+  ratios:
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+  stratify_by:
+    - source_dataset
+    - label
+  family_disjoint: true
+  # A split is only approved if every gate passes; warnings require a written
+  # justification in the approval statement.
+  gates:
+    require_unique_sample_ids: true
+    require_no_family_overlap: true
+    require_no_text_hash_overlap: true
+    require_label_coverage: true
+    require_min_test_per_cell: 30
+    require_no_empty_text: true
+    max_label_imbalance_ratio: 10.0
+    allow_unresolved_lineage: false
+
+duplicates:
+  exact_text_normalization: "nfkc_lower_whitespace_collapse"
+  near_duplicate_method: minhash
+  near_duplicate_threshold: 0.85
+
+paths:
+  derived_root: data/derived
+  manifest_root: data/manifests
+  report_root: reports/dataset_audit

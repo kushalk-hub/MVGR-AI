@@ -1,0 +1,98 @@
+# MVGR-AI evaluation protocol. Person 1 owns this file.
+# Both owners must evaluate through this protocol; no ad-hoc splits.
+
+evaluation:
+  protocol_version: "eval.v1"
+  # Predictions are produced against the approved manifest only.
+  require_approved_manifest: true
+  join_labels_inside_evaluator_only: true
+  test_set_lock:
+    enabled: true
+    path: experiments/locks/test_access_log.jsonl
+    single_use_per_experiment: true
+  threshold_selection:
+    split: validation
+    criterion: balanced_accuracy
+    tie_breaker: higher_recall
+    freeze_artifact: experiments/configs/frozen_thresholds.json
+    forbid_test_tuning: true
+
+metrics:
+  primary: macro_f1
+  report:
+    - accuracy
+    - balanced_accuracy
+    - precision
+    - recall
+    - f1
+    - roc_auc
+    - confusion_matrix
+    - brier_score
+    - expected_calibration_error
+  class_labels: [0, 1]
+  positive_class: 1
+
+uncertainty:
+  method: stratified_bootstrap
+  resamples: 1000
+  confidence: 0.95
+  seed: 42
+  report_ci_for: [macro_f1, balanced_accuracy, roc_auc]
+
+stratification:
+  # Every reported result is broken down by these fields. A pooled number
+  # without its strata is not reportable.
+  always_report:
+    - source_dataset
+    - source_task
+    - text_type
+    - label
+  minimum_cell_size: 30
+  report_small_cells_as: insufficient_n
+
+controls:
+  length:
+    enabled: true
+    bins:
+      - [0, 200]
+      - [200, 500]
+      - [500, 1000]
+      - [1000, 3000]
+      - [3000, 1000000]
+    report_length_only_baseline: true
+  class_prior:
+    report_majority_class_baseline: true
+  condition_confounding:
+    detect_perfect_confounding: true
+    action: report_as_confounded_not_as_effect
+
+baselines:
+  required:
+    - id: tfidf_logistic
+      owner: person1
+      status: required
+  optional:
+    - id: roberta
+      owner: person1
+      status: conditional
+      requires: [model_access, task_compatible_labels]
+    - id: gptzero
+      owner: person1
+      status: conditional
+      requires: [api_access, terms_of_use_review]
+    - id: binoculars
+      owner: person1
+      status: conditional
+      requires: [model_access, gpu]
+  unavailable_policy: >
+    An unavailable baseline is reported as unavailable with the reason. It is
+    never silently omitted and never compared across a different split.
+
+comparison:
+  require_same_split_id: true
+  require_same_dataset_version: true
+  require_same_eval_protocol: true
+  significance_test: paired_bootstrap
+  correction: holm_bonferroni
+  alpha: 0.05
+  report_effect_size: true

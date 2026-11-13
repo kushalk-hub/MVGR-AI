@@ -1,0 +1,164 @@
+{
+  "audit_versions": {
+    "tokenizer": "tokenizer.v1",
+    "dataset_version": "mvgr-ai/2026-11-13"
+  },
+  "dataset": {
+    "path": "data\\processed\\mvgr_ai_combined.parquet",
+    "sha256": "9c824a635ed66bc02421c572381910aacb0198209a0e1f8e2d9111728a2eb917",
+    "size_bytes": 57388253,
+    "rows": 128709,
+    "columns": [
+      "sample_id",
+      "text",
+      "label",
+      "source_dataset",
+      "source_task",
+      "text_type",
+      "paraphrase_status",
+      "domain",
+      "ai_model",
+      "split",
+      "group_id",
+      "source_row_id"
+    ],
+    "provenance": {
+      "canonical_path": "data\\processed\\mvgr_ai_combined.parquet",
+      "source_path": "C:\\Users\\kusha\\OneDrive\\Documents\\MVGR-AI\\datasets\\processed\\mvgr_ai_combined.parquet",
+      "sha256": "9c824a635ed66bc02421c572381910aacb0198209a0e1f8e2d9111728a2eb917",
+      "source_sha256": "9c824a635ed66bc02421c572381910aacb0198209a0e1f8e2d9111728a2eb917",
+      "recorded_sha256": null,
+      "match": true
+    }
+  },
+  "labels": {
+    "semantics": {
+      "0": "human_authored",
+      "1": "ai_authored"
+    },
+    "counts": {
+      "1": 92360,
+      "0": 36349
+    },
+    "null_count": 0
+  },
+  "sources": {
+    "counts": {
+      "PADBen": 80651,
+      "BiScope": 48058
+    },
+    "label_crosstab": {
+      "BiScope": {
+        "0": 4388,
+        "1": 43670
+      },
+      "PADBen": {
+        "0": 31961,
+        "1": 48690
+      }
+    }
+  },
+  "tasks": {
+    "counts": {
+      "BiScope": 48058,
+      "sentence-pair-task1": 24730,
+      "sentence-pair-task2": 24057,
+      "sentence-pair-task5": 15929,
+      "exhaustive-task1": 7457,
+      "exhaustive-task2": 4739,
+      "exhaustive-task5": 3739
+    },
+    "label_crosstab": {
+      "BiScope": {
+        "0": 4388,
+        "1": 43670
+      },
+      "exhaustive-task1": {
+        "0": 3644,
+        "1": 3813
+      },
+      "exhaustive-task2": {
+        "0": 1047,
+        "1": 3692
+      },
+      "exhaustive-task5": {
+        "0": 0,
+        "1": 3739
+      },
+      "sentence-pair-task1": {
+        "0": 12312,
+        "1": 12418
+      },
+      "sentence-pair-task2": {
+        "0": 11521,
+        "1": 12536
+      },
+      "sentence-pair-task5": {
+        "0": 3437,
+        "1": 12492
+      }
+    }
+  },
+  "conditions": {
+    "text_type_counts": {
+      "paraphrased": 53972,
+      "original": 29710,
+      "unknown": 28796,
+      "deep_paraphrased": 16231
+    },
+    "paraphrase_status_counts": {
+      "True": 70203,
+      "False": 29710,
+      "<missing>": 28796
+    }
+  },
+  "splits": {
+    "counts": {
+      "train": 108211,
+      "validation": 11861,
+      "test": 8637
+    },
+    "label_crosstab": {
+      "test": {
+        "0": 1090,
+        "1": 7547
+      },
+      "train": {
+        "0": 33198,
+        "1": 75013
+      },
+      "validation": {
+        "0": 2061,
+        "1": 9800
+      }
+    }
+  },
+  "lineage": {
+    "unique_group_ids": 102530,
+    "rows_without_group_id": 0,
+    "group_size_counts": {
+      "1": 76351,
+      "2": 26179
+    }
+  },
+  "text": {
+    "length": {
+      "mean": 738.1502303646209,
+      "std": 1414.139793400282,
+      "min": 10,
+      "p25": 99.0,
+      "median": 137.0,
+      "p75": 562.0,
+      "max": 40512
+    },
+    "empty_rows": 0,
+    "shorter_than_40_chars": 281,
+    "duplicate_normalized_rows": 0,
+    "duplicate_normalized_groups": 0,
+    "unique_normalized_texts": 128709
+  },
+  "warnings": [
+    "No generator metadata is available for any row; model-specific claims are unsupported.",
+    "Some rows have text_type=unknown; condition-specific claims must exclude them."
+  ]
+}

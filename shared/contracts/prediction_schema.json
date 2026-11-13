@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mvgr-ai.local/contracts/prediction_schema-1.0.0.json",
+  "title": "MVGR-AI prediction record",
+  "description": "One line of a JSONL prediction file. Contains no ground-truth label. Labels are joined only inside the evaluation engine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sample_id",
+    "experiment_id",
+    "split_id",
+    "graph_build_id",
+    "config_id",
+    "model_family",
+    "predicted_score",
+    "predicted_class",
+    "produced_at"
+  ],
+  "properties": {
+    "sample_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "experiment_id": {
+      "type": "string",
+      "pattern": "^exp_[0-9a-f]{12,64}$"
+    },
+    "split_id": {
+      "type": "string",
+      "pattern": "^split_[0-9a-f]{12,64}$"
+    },
+    "graph_build_id": {
+      "type": "string",
+      "pattern": "^(gb_|none)[0-9a-f_]{0,64}$"
+    },
+    "config_id": {
+      "type": "string",
+      "pattern": "^cfg_[0-9a-f]{12,64}$"
+    },
+    "model_family": {
+      "enum": [
+        "tfidf_logistic",
+        "deterministic_scoring",
+        "tabular_control",
+        "gnn_gcn",
+        "gnn_sage",
+        "gnn_gat",
+        "gnn_multiview",
+        "external"
+      ]
+    },
+    "model_version": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "fold": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "score_semantics": {
+      "const": "p_ai_authored",
+      "default": "p_ai_authored"
+    },
+    "predicted_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "predicted_class": {
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "produced_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

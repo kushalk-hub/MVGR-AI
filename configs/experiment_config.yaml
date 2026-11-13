@@ -1,0 +1,113 @@
+# MVGR-AI experiment configuration.
+# Shared ownership: change requires review from both contributors.
+
+experiment:
+  schema_version: "1.0.0"
+  seeds: [13, 42, 101]
+  primary_seed: 42
+  deterministic: true
+  fail_on_nondeterminism: true
+  artifact_root: experiments
+  config_snapshot_dir: experiments/configs
+  prediction_dir: experiments/predictions
+  checkpoint_dir: experiments/checkpoints
+  log_dir: experiments/logs/events.jsonl
+
+tracking:
+  # File-based registry first; MLflow/W&B can be added behind the same writer.
+  backend: jsonl
+  registry: experiments/runs/registry.jsonl
+  metrics: experiments/runs/metrics.jsonl
+  require_git_commit: true
+  dirty_tree_policy: record_and_warn
+
+models:
+  tfidf_logistic:
+    owner: person1
+    input: text
+    vectorizer:
+      analyzer: word
+      ngram_range: [1, 2]
+      min_df: 3
+      max_df: 0.95
+      sublinear_tf: true
+      lowercase: true
+    classifier:
+      type: logistic_regression
+      class_weight: balanced
+      max_iter: 2000
+      solver: liblinear
+    vocab_fit_split: train
+
+  deterministic_scoring:
+    owner: person1
+    input: deterministic_features
+    feature_set_version: "features.v1"
+    selection: validation
+    direction_selection: validation
+    threshold_selection: validation
+    freeze_before_test: true
+
+  tabular_control:
+    owner: person1
+    input: deterministic_features
+    model: gradient_boosting
+    purpose: control_not_primary_result
+
+  gnn:
+    owner: person2
+    initial:
+      view: lexical
+      architecture: gcn
+      hidden_dim: 64
+      layers: 2
+      dropout: 0.2
+      pooling: mean
+      optimizer: adam
+      learning_rate: 0.001
+      epochs: 100
+      early_stopping_patience: 10
+      batch_size: 32
+    candidates: [gcn, sage, gat]
+    evaluation_order:
+      - lexical_only
+      - syntactic_only
+      - multi_view_fusion
+    fusion_rule: >
+      Multi-view fusion is compared with the best single-view model on the same
+      split_id, dataset_version and seeds. No fusion claim is made otherwise.
+    node_feature_vocab_fit_split: train
+    forbid_target_metadata_as_features: true
+
+fingerprinting:
+  exact: sha256
+  normalized: sha256_normalized_v1
+  shingles:
+    size_words: 5
+    weighting: binary
+  ngram:
+    n: 5
+    similarity: jaccard
+  minhash:
+    permutations: 128
+    seed: 42
+    bands: 16
+    rows_per_band: 8
+  semantic:
+    enabled: false
+    model: sentence-transformers/all-MiniLM-L6-v2
+    note: optional extension, must be versioned when enabled
+  reference_index:
+    build_from: train
+    allow_test_reference: false
+    note: >
+      A reference index used at inference must never contain test-split text,
+      otherwise similarity becomes a label leak.
+  interpretation: similarity_is_not_authorship_proof
+
+watermark:
+  default_provider: unsupported
+  providers: []
+  statuses: [detected, not_detected, unsupported, inconclusive]
+  require_explicit_provider_config: true
+  interpret_absence_as: not_evidence_of_human_authorship

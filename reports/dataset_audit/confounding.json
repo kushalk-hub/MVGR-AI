@@ -1,0 +1,146 @@
+[
+  {
+    "source_dataset": "BiScope",
+    "source_task": "BiScope",
+    "text_type": "paraphrased",
+    "only_label": 1,
+    "rows": 21785,
+    "kind": "condition_predicts_label",
+    "consequence": "Cannot be used as evidence of a paraphrase effect; report as confounded."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "exhaustive-task5",
+    "text_type": "deep_paraphrased",
+    "only_label": 1,
+    "rows": 3739,
+    "kind": "condition_predicts_label",
+    "consequence": "Cannot be used as evidence of a paraphrase effect; report as confounded."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task5",
+    "text_type": "deep_paraphrased",
+    "only_label": 1,
+    "rows": 12492,
+    "kind": "condition_predicts_label",
+    "consequence": "Cannot be used as evidence of a paraphrase effect; report as confounded."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task5",
+    "text_type": "original",
+    "only_label": 0,
+    "rows": 3437,
+    "kind": "condition_predicts_label",
+    "consequence": "Cannot be used as evidence of a paraphrase effect; report as confounded."
+  },
+  {
+    "source_dataset": "BiScope",
+    "source_task": "BiScope",
+    "label": 0,
+    "only_text_type": "original",
+    "rows": 4388,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "exhaustive-task1",
+    "label": 0,
+    "only_text_type": "paraphrased",
+    "rows": 3644,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "exhaustive-task1",
+    "label": 1,
+    "only_text_type": "paraphrased",
+    "rows": 3813,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "exhaustive-task2",
+    "label": 0,
+    "only_text_type": "unknown",
+    "rows": 1047,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "exhaustive-task2",
+    "label": 1,
+    "only_text_type": "unknown",
+    "rows": 3692,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "exhaustive-task5",
+    "label": 1,
+    "only_text_type": "deep_paraphrased",
+    "rows": 3739,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task1",
+    "label": 0,
+    "only_text_type": "paraphrased",
+    "rows": 12312,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task1",
+    "label": 1,
+    "only_text_type": "paraphrased",
+    "rows": 12418,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task2",
+    "label": 0,
+    "only_text_type": "unknown",
+    "rows": 11521,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task2",
+    "label": 1,
+    "only_text_type": "unknown",
+    "rows": 12536,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task5",
+    "label": 0,
+    "only_text_type": "original",
+    "rows": 3437,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  },
+  {
+    "source_dataset": "PADBen",
+    "source_task": "sentence-pair-task5",
+    "label": 1,
+    "only_text_type": "deep_paraphrased",
+    "rows": 12492,
+    "kind": "label_predicts_condition",
+    "consequence": "Condition-specific label; pooled condition claims are invalid."
+  }
+]

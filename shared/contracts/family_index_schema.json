@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mvgr-ai.local/contracts/family_index_schema-1.0.0.json",
+  "title": "MVGR-AI family lineage record",
+  "description": "One line of the Person-1-owned family index. Family identity is used only for splitting, leakage auditing and evaluation. It must never enter a model as a feature.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sample_id",
+    "family_id",
+    "family_source",
+    "resolution_status"
+  ],
+  "properties": {
+    "sample_id": { "type": "string", "minLength": 1 },
+    "family_id": { "type": "string", "minLength": 1 },
+    "family_source": {
+      "enum": ["source_group_id", "source_pair_id", "exact_text_hash", "singleton_fallback"]
+    },
+    "resolution_status": {
+      "enum": ["resolved", "exact_text_only", "unresolved"]
+    },
+    "evidence": { "type": "string", "maxLength": 500 }
+  }
+}

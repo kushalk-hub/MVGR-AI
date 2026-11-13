@@ -1,0 +1,8 @@
+{
+  "dataset_sha256": "9c824a635ed66bc02421c572381910aacb0198209a0e1f8e2d9111728a2eb917",
+  "rows": 128709,
+  "gates": "fail",
+  "failing_checks": [
+    "lineage_resolution"
+  ]
+}

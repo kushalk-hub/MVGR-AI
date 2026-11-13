@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mvgr-ai.local/contracts/analysis_report_schema-1.0.0.json",
+  "title": "MVGR-AI online analysis report",
+  "description": "Response contract of POST /v1/analyze. Every evidence block is optional but must carry an explicit status; absence of evidence is never reported as proof of human authorship.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_id",
+    "report_schema_version",
+    "created_at",
+    "input",
+    "classification",
+    "graph_analysis",
+    "fingerprint",
+    "watermark",
+    "evidence",
+    "limitations",
+    "versions"
+  ],
+  "properties": {
+    "report_id": { "type": "string", "pattern": "^rep_[0-9a-f]{12,64}$" },
+    "report_schema_version": { "const": "1.0.0" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["characters", "words", "text_sha256"],
+      "properties": {
+        "characters": { "type": "integer", "minimum": 0 },
+        "words": { "type": "integer", "minimum": 0 },
+        "text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "normalized_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable"] },
+        "label": { "enum": ["human", "ai", "uncertain"] },
+        "p_ai": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "calibrated": { "type": "boolean" },
+        "model_version": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "graph_analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "views"],
+      "properties": {
+        "status": { "enum": ["available", "partial", "unavailable"] },
+        "views": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": ["number", "integer", "null"]
+            }
+          }
+        },
+        "reason": { "type": "string" }
+      }
+    },
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["available", "no_reference_index", "unavailable"] },
+        "exact_sha256": { "type": "string" },
+        "normalized_sha256": { "type": "string" },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reference_id", "method", "score"],
+            "properties": {
+              "reference_id": { "type": "string" },
+              "method": { "enum": ["exact", "shingle_jaccard", "minhash", "semantic"] },
+              "score": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        },
+        "reason": { "type": "string" }
+      }
+    },
+    "watermark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["detected", "not_detected", "unsupported", "inconclusive"]
+        },
+        "provider": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "details": { "type": "string" },
+        "assumptions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "status", "statement"],
+        "properties": {
+          "source": {
+            "enum": ["classification", "graph", "fingerprint", "watermark"]
+          },
+          "status": { "enum": ["supports_ai", "supports_human", "neutral", "unsupported"] },
+          "statement": { "type": "string" },
+          "strength": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_schema_version", "graph_spec_version"],
+      "properties": {
+        "report_schema_version": { "type": "string" },
+        "graph_spec_version": { "type": "string" },
+        "model_version": { "type": "string" },
+        "feature_set_version": { "type": "string" }
+      }
+    }
+  }
+}

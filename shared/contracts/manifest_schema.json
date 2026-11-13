@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mvgr-ai.local/contracts/manifest_schema-1.0.0.json",
+  "title": "MVGR-AI dataset split manifest",
+  "description": "Canonical, approvable split manifest. Assignment lists live in checksummed sidecar files so the manifest itself stays reviewable in git.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_id",
+    "manifest_version",
+    "dataset_version",
+    "dataset_sha256",
+    "split_policy_version",
+    "group_key",
+    "seed",
+    "created_at",
+    "created_by",
+    "status",
+    "scope",
+    "counts",
+    "assignments",
+    "gates"
+  ],
+  "properties": {
+    "manifest_id": {
+      "type": "string",
+      "pattern": "^man_[0-9a-f]{12,64}$"
+    },
+    "manifest_version": {
+      "const": "1.0.0"
+    },
+    "dataset_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "split_policy_version": {
+      "const": "split.v1"
+    },
+    "group_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": ["candidate", "approved", "revoked"]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "sources"],
+      "properties": {
+        "mode": { "enum": ["pooled", "source_scoped"] },
+        "sources": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["train", "validation", "test"],
+      "properties": {
+        "train": { "type": "integer", "minimum": 0 },
+        "validation": { "type": "integer", "minimum": 0 },
+        "test": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "assignments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["train", "validation", "test"],
+      "properties": {
+        "train": { "$ref": "#/$defs/assignment_file" },
+        "validation": { "$ref": "#/$defs/assignment_file" },
+        "test": { "$ref": "#/$defs/assignment_file" }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks"],
+      "properties": {
+        "status": { "enum": ["pass", "fail"] },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pass", "warn", "fail"],
+          "properties": {
+            "pass": { "type": "integer", "minimum": 0 },
+            "warn": { "type": "integer", "minimum": 0 },
+            "fail": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["check", "status", "details"],
+            "properties": {
+              "check": { "type": "string" },
+              "status": { "enum": ["pass", "warn", "fail"] },
+              "details": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approver", "approved_at", "statement"],
+        "properties": {
+          "approver": { "type": "string" },
+          "approved_at": { "type": "string", "format": "date-time" },
+          "statement": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "assignment_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "count"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

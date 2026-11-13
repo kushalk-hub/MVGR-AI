@@ -1,0 +1,15 @@
+source_dataset,source_task,text_type,label,count
+BiScope,BiScope,original,0,4388
+BiScope,BiScope,original,1,21885
+BiScope,BiScope,paraphrased,1,21785
+PADBen,exhaustive-task1,paraphrased,0,3644
+PADBen,exhaustive-task1,paraphrased,1,3813
+PADBen,exhaustive-task2,unknown,0,1047
+PADBen,exhaustive-task2,unknown,1,3692
+PADBen,exhaustive-task5,deep_paraphrased,1,3739
+PADBen,sentence-pair-task1,paraphrased,0,12312
+PADBen,sentence-pair-task1,paraphrased,1,12418
+PADBen,sentence-pair-task2,unknown,0,11521
+PADBen,sentence-pair-task2,unknown,1,12536
+PADBen,sentence-pair-task5,deep_paraphrased,1,12492
+PADBen,sentence-pair-task5,original,0,3437

@@ -1,0 +1,60 @@
+{
+  "status": "fail",
+  "counts": {
+    "pass": 6,
+    "warn": 3,
+    "fail": 1
+  },
+  "checks": [
+    {
+      "check": "unique_sample_ids",
+      "status": "pass",
+      "details": "128709 unique sample ids"
+    },
+    {
+      "check": "text_present",
+      "status": "warn",
+      "details": "281 texts shorter than 40 characters"
+    },
+    {
+      "check": "label_domain",
+      "status": "pass",
+      "details": "binary labels 0/1 only"
+    },
+    {
+      "check": "family_disjoint",
+      "status": "pass",
+      "details": "102530 families, none spanning splits"
+    },
+    {
+      "check": "text_hash_disjoint",
+      "status": "pass",
+      "details": "no normalized text crosses a split"
+    },
+    {
+      "check": "split_ratios",
+      "status": "warn",
+      "details": "deviation > 0.03: train=0.841 (target 0.700), validation=0.092 (target 0.150), test=0.067 (target 0.150)"
+    },
+    {
+      "check": "label_coverage",
+      "status": "pass",
+      "details": "all 7 task/label test cells have >= 30 rows"
+    },
+    {
+      "check": "class_imbalance",
+      "status": "pass",
+      "details": "AI:human ratio 2.54"
+    },
+    {
+      "check": "lineage_resolution",
+      "status": "fail",
+      "details": "48058 rows rely on exact-text-only or unresolved lineage in ['BiScope']; paraphrase families may cross splits. Source-scoped claims are possible; pooled claims require an explicit waiver."
+    },
+    {
+      "check": "condition_confounding",
+      "status": "warn",
+      "details": "16 confounded cells covering 126492 rows; condition effects cannot be estimated there"
+    }
+  ]
+}

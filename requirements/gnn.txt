@@ -1,0 +1,4 @@
+-r graph.txt
+scikit-learn>=1.5
+torch>=2.3
+torch-geometric>=2.5

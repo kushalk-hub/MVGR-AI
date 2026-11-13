@@ -1,0 +1,30 @@
+{
+  "rows": 128709,
+  "families": 102530,
+  "resolution_status": {
+    "resolved": 80651,
+    "exact_text_only": 48058
+  },
+  "family_size_distribution": {
+    "1": 76351,
+    "2": 26179
+  },
+  "families_with_both_labels": 26179,
+  "families_spanning_splits": 0,
+  "by_source": {
+    "BiScope": {
+      "rows": 48058,
+      "families": 48058,
+      "resolved": 0,
+      "exact_text_only": 48058,
+      "unresolved": 0
+    },
+    "PADBen": {
+      "rows": 80651,
+      "families": 54472,
+      "resolved": 80651,
+      "exact_text_only": 0,
+      "unresolved": 0
+    }
+  }
+}

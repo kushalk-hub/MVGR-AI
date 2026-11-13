@@ -1,0 +1,56 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+
+# --- Source and processed dataset artifacts (never committed) --------------
+datasets/raw/*
+!datasets/raw/.gitkeep
+datasets/raw/**/.gitkeep
+datasets/processed/*
+!datasets/processed/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# --- Contract copy and upstream immutability --------------------------------
+# data/processed is a byte-identical contract copy of datasets/processed and is
+# never committed; the audit verifies the digest instead.
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# --- Derived indexes, candidate manifests, experiment artifacts -----------
+data/derived/*
+!data/derived/.gitkeep
+data/manifests/candidate/*
+!data/manifests/candidate/.gitkeep
+data/manifests/*
+!data/manifests/.gitkeep
+!data/manifests/candidate/
+!data/manifests/candidate/.gitkeep
+experiments/predictions/*
+experiments/checkpoints/*
+experiments/logs/*
+experiments/runs/*
+!experiments/**/.gitkeep
+reports/generated/*
+!reports/generated/.gitkeep
+
+# --- Models and build outputs ---------------------------------------------
+models/
+artifacts/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+
+# --- Tooling ---------------------------------------------------------------
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/

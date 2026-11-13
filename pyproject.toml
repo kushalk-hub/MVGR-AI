@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mvgr-ai"
+version = "0.1.0"
+description = "Multi-view graph-based analysis of human, AI, paraphrased and deeply paraphrased text"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary - research use only" }
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "PyYAML>=6.0",
+    "jsonschema>=4.22",
+]
+
+[project.optional-dependencies]
+graph = ["networkx>=3.3"]
+baseline = ["scikit-learn>=1.5"]
+syntactic = ["spacy>=3.7"]
+neo4j = ["neo4j>=5.24", "python-dotenv>=1.0"]
+gnn = ["torch>=2.3", "torch-geometric>=2.5"]
+api = ["fastapi>=0.115", "uvicorn>=0.30"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+mvgr = "mvgr:main"
+
+[tool.setuptools]
+py-modules = ["mvgr"]
+
+[tool.setuptools.packages.find]
+include = [
+    "shared*",
+    "dataset_audit*",
+    "deterministic*",
+    "baseline*",
+    "fingerprinting*",
+    "watermark*",
+    "graph_engine*",
+    "evaluation*",
+    "backend*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning:jsonschema.*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
