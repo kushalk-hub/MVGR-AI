@@ -168,37 +168,6 @@ offline so that a score means the same thing in both.
 
 ---
 
-## What is implemented now
-
-* **Contracts** (`shared/contracts`) — JSON Schema plus fail-closed validators
-  for graph records, predictions, manifests, the family index, experiments, and
-  the analysis report. Content-addressed IDs (`cfg_`, `gb_`, `exp_`, `split_`,
-  `man_`, `rep_`).
-* **Audit** (`dataset_audit`) — inventory, provenance digest check, label
-  mapping, family lineage, leakage and confounding gates. Runs end to end on the
-  real 128,709-row corpus.
-* **Graph engine** (`graph_engine`) — lexical and syntactic builders, versioned
-  JSONL export with build manifests, Neo4j loader/schema/queries, and the GNN
-  package (dataset/model/train/predict; PyTorch is an optional extra).
-* **Deterministic analysis** (`deterministic`) — 77 `features.v1` features
-  across ten independently testable families, plus a validation-selected,
-  frozen scoring rule.
-* **Baseline** (`baseline/tfidf_logistic.py`) — the required TF-IDF + logistic
-  baseline with test-split locking.
-* **Fingerprinting & watermark** (`fingerprinting`, `watermark`) — SHA-256,
-  n-gram Jaccard, MinHash/LSH reference index, and a watermark verifier that
-  defaults to `unsupported`.
-* **Backend** (`backend`) — FastAPI app (`/health`, `/v1/analyze`,
-  `/v1/contracts/versions`) that always returns a contract-valid report.
-* **Tests** (`tests`) — 47 tests covering provenance, lineage, gates, graph
-  contracts, features, scoring, fingerprinting, watermark, metrics, the backend
-  report, the test lock, and an end-to-end graph→features→score→evaluate run.
-
-Architecture and deliverable documentation lives in
-[`reports/final/`](reports/final/README.md).
-
----
-
 ## Quickstart
 
 ```powershell
@@ -243,25 +212,6 @@ Run the tests:
 ```powershell
 python -m pytest
 ```
-
----
-
-## Non-negotiable research rules
-
-1. The label is **authorship**, not paraphrase status. A paraphrased AI text is
-   still AI-authored.
-2. Labels, source, task, family, condition, and split are **never** graph node
-   features or model inputs.
-3. Train/test leakage is blocked by a family-disjoint split; a manifest is only
-   usable after explicit approval (or a recorded `WAIVER:`).
-4. Feature selection, direction, and thresholds are chosen on the **validation**
-   split only and frozen before the test split is touched. Test access is logged.
-5. BiScope has no paraphrase-family identifier in the current build, so pooled
-   paraphrase-family claims are unsupported without a waiver.
-6. PADBen task semantics are still pending confirmation against the dataset card;
-   the audit never infers them from the label distribution.
-7. Similarity is evidence of textual overlap, never of common authorship.
-8. A missing watermark is not evidence of human authorship.
 
 ---
 
