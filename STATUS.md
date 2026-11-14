@@ -13,13 +13,13 @@ blocked or not started**. The authoritative design docs live in
 
 | Item | Value |
 |---|---|
-| Test suite | **132 passed, 2 skipped** (`python -m pytest`) |
+| Test suite | **138 passed, 1 skipped** (`python -m pytest`) |
 | Dataset (canonical) | `data/processed/mvgr_ai_combined.parquet`, **128,709 rows**, SHA-256 `9c824a63…b917`, version `mvgr-ai/2026-11-13` |
 | Provenance | byte-identical to immutable `datasets/processed/` (`match: true`) |
 | `features.v1` | **77** deterministic features |
 | Neo4j pilot (live) | **500 samples, 1,000 graphs, 102,822 token nodes, 254,028 relationships** |
 | Graph feature extraction | **complete** — 500/500 samples, 1,000/1,000 views, 147.6 s |
-| Offline fingerprinting | **complete** — 500/500 samples, stylometric 140 + writeprints 301 + GLTR 19 (unavailable) + watermark 12 → fused 408, ~100.8 s |
+| Offline fingerprinting | **complete** — 500/500 samples, stylometric 140 + writeprints 301 + GLTR 19 (real GPT-2, CPU) + watermark 12 → fused 424, 1261.4 s |
 | Split manifest | **not approved** (3 candidates exist) |
 | Models trained | **none** |
 | Frontend | **not implemented** (design doc only) |
@@ -169,9 +169,14 @@ overwritten.
 * **Module C — GLTR-style** (`gltr/`): full local causal-LM pipeline
   (`local_model.py`, `token_probability.py`, `token_rank.py`,
   `entropy_analysis.py`, `document_features.py`, `pipeline.py`), **19**
-  document features. **Unavailable in this environment** (`transformers`/`torch`
-  not installed; `allow_download: false`), so it emits an all-`NaN` placeholder
-  and never downloads a model. `estimate-gltr` sizes a real run first.
+  document features. **Executed** on all 500 pilot samples with the locally
+  stored GPT-2 base model (`gpt2@607a30d783dfa663caf39e06633721c8d4cfcd7e`,
+  124.4M params, `models/gltr/gpt2/`), CPU-only, `float32`, `max_length: 256`,
+  `stride: 128`, batch 4, `torch.inference_mode()` + `model.eval()`. Model
+  loaded once per run; downloaded only by the explicit one-off
+  `scripts/download_gltr_model.py` (`allow_download: false`,
+  `local_files_only: true`). `estimate-gltr` sizes a run first; long runs
+  checkpoint and resume. 500/500 samples, 0 errors, all features finite.
 * **Module D — watermark verification** (`watermark/statistics.py`,
   `unigram.py`, `topic.py`): Kirchenbauer-style unigram green-list detector
   (gamma 0.25, z- and p-value thresholds) + topic-conditioned interface
@@ -181,13 +186,16 @@ overwritten.
 * **Module E — fusion** (`fusion/multiview_feature_fusion.py`): joins
   lexical/syntactic graph branches with stylometric/writeprints/GLTR and keeps
   watermark as auxiliary evidence. Identifiers/metadata/labels stay in a
-  separate table. Pilot: **631 candidates → 408 selected** (30 missing, 26
-  constant, 167 correlated).
+  separate table. Pilot: **650 candidates → 424 selected** (30 missing, 26
+  constant, 170 correlated); GLTR contributes 16 columns (3 dropped as
+  correlated).
 * **Config/versions**: `configs/fingerprint_config.yaml`; new version constants
   in `shared/contracts/versions.py` (`fingerprint.v1`, `stylometric.v1`,
   `writeprints.v1`, `gltr.v1`, `watermark.v1`, `fusion.v1`). `pyproject.toml`
   gains the optional `gltr` extra and `gltr*`/`fusion*` packages.
-* **Full pilot run**: 500/500 samples, ~100.8 s, peak 141.8 MB.
+* **Full pilot run** (`all --no-resume`, offline): 500/500 samples, 1261.4 s,
+  tracemalloc peak 887 MB (Python-only). GLTR-only: 1017.7 s, peak RSS
+  1320 MB.
 * **Validation** (`scripts/validate_fingerprint_features.py`): **PASS 41/41**
   (schema, coverage, duplicates, sample alignment, leakage, value ranges,
   missing-value thresholds, watermark status validity, GLTR availability
@@ -203,7 +211,7 @@ degrades honestly (`classification.status = "unavailable"` when no model bundle
 is present). Optional `api` extra; routes are covered by a test that skips when
 FastAPI is absent.
 
-## 12. Tests — DONE (132 pass, 2 skipped)
+## 12. Tests — DONE (138 pass, 1 skipped)
 
 | File | Tests | Covers |
 |---|---:|---|
@@ -213,14 +221,16 @@ FastAPI is absent.
 | `tests/test_graph_features.py` | 22 | feature math, selection gates, leakage, verifier detection, live-DB |
 | `tests/test_fingerprinting.py` | 17 | stylometric families, empty/short/long text, POS/syntactic degradation, schema |
 | `tests/test_writeprints.py` | 10 | n-gram vocab bounds, normalization, sparse/dense consistency |
-| `tests/test_gltr.py` | 14 | tokenizer alignment, causal shift, missing-model handling (skips without a local LM) |
+| `tests/test_gltr.py` | 19 | tokenizer alignment, causal shift, prob/rank/entropy/perplexity math, window coverage, batching equivalence, empty/short text, checkpoint round-trip, missing-model handling, real local GPT-2 inference (offline) |
 | `tests/test_watermark.py` | 11 | green-list statistics, key handling, unsupported schemes, no-false-negative rule |
 | `tests/test_feature_fusion.py` | 12 | branch join, identifier/metadata separation, selection, schema |
 | `tests/test_integration.py` | 6 | end-to-end graph → features → score → evaluate |
-| **Total** | **134** | **132 passed, 2 skipped** |
+| **Total** | **139** | **138 passed, 1 skipped** |
 
-The two skips are the GLTR local-model test (no causal LM installed) and the
-FastAPI integration test (optional `api` extra absent).
+The one skip is the FastAPI integration test (optional `api` extra absent). The
+GLTR tests run offline: the mathematical core is pure NumPy, the model-loading
+path is checked for its offline guarantees, and the real-GPT-2 inference test
+executes when `models/gltr/gpt2/` is present (it is, in this environment).
 
 ## 13. Documentation — DONE
 
@@ -257,9 +267,9 @@ FastAPI integration test (optional `api` extra absent).
 | Approved split manifest | **Blocked** | Human decision required. 3 candidates exist; none approved. |
 | Formal train/validation/test split | **Not generated** | Gated on the approved manifest. |
 | Model training (deterministic/GBM) | **Not started** | Requires an approved split. |
-| GNN training | **Not started** | Requires approved split **and** PyTorch + PyG (not installed). |
+| GNN training | **Not started** | Requires approved split **and** PyG (PyTorch CPU is now installed for GLTR; `torch-geometric` is not). |
 | Test-set evaluation | **Not run** | Test lock held until the manifest is approved. |
-| GLTR execution | **Not run** | No local causal LM; `transformers`/`torch` not installed. Module reports unavailable and never auto-downloads. |
+| GLTR execution | **Done** | Executed on 500/500 pilot samples with a local GPT-2 base model (`models/gltr/gpt2/`, CPU-only, offline). Downloaded only by the explicit one-off script; never auto-downloaded during experiments. |
 | Fingerprint/GLTR/watermark features as model inputs | **Not started** | Extraction only; a real experiment is gated on the approved split (and must fit writeprints vocab on train). |
 | Frontend implementation | **Not started** | Roadmap Phase 8. |
 | `graph_embeddings.npy` | **Skipped** | No validated embedding method implemented. |
@@ -301,7 +311,12 @@ python mvgr.py lineage
 .\.venv\Scripts\python.exe scripts\prepare_ml_dataset.py
 
 # offline fingerprinting / writeprints / GLTR / watermark / fusion (pilot)
+# one-off CPU-only install + model download (network required), then run offline
+.\.venv\Scripts\python.exe -m pip install -r requirements\gltr.txt
+.\.venv\Scripts\python.exe scripts\download_gltr_model.py
+$env:HF_HUB_OFFLINE="1"; $env:TRANSFORMERS_OFFLINE="1"
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py all
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr --limit 50
 .\.venv\Scripts\python.exe scripts\validate_fingerprint_features.py
 
 # contract smoke test

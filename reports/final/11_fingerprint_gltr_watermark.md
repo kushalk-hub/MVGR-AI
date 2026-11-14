@@ -87,15 +87,27 @@ uncontrolled expansion.
 
 `gltr/` implements the full pipeline (`local_model.py`, `token_probability.py`,
 `token_rank.py`, `entropy_analysis.py`, `document_features.py`, `pipeline.py`)
-using a **locally cached causal language model**. It applies correct causal
+using a **locally stored causal language model**. It applies correct causal
 shifting for next-token probabilities, aligns the tokenizer, excludes padding
-and special tokens, and supports CPU (and GPU when present) with batching and a
-configurable sequence length.
+and special tokens, and runs on CPU with batching and a configurable sequence
+length.
 
-**Status in this environment: UNAVAILABLE.** `transformers` (and `torch`) are
-not installed, and `allow_download` defaults to `false`, so the module reports
-itself unavailable and emits an all-`NaN` placeholder table of the **19**
-document features rather than downloading anything:
+**Status in this environment: AVAILABLE and EXECUTED** on all 500 pilot
+samples.
+
+| Setting | Value |
+|---|---|
+| Reference model | `gpt2` (124M parameters) |
+| Pinned revision | `607a30d783dfa663caf39e06633721c8d4cfcd7e` |
+| Storage | `models/gltr/gpt2/` (≈478 MB; `config.json` + `model.safetensors` + tokenizer + `MODEL_INFO.json`) |
+| Parameters / vocab | 124,439,808 / 50,257 |
+| Device / dtype | `cpu` / `float32` (no CUDA; `cuda_available: false`) |
+| Sequence length | `max_length: 256` tokens, `stride: 128` (sliding window) |
+| Batch size | 4 (dynamically padded, attention-masked) |
+| Runtime | `torch 2.15.0+cpu`, `transformers 5.23.0` |
+| Download policy | `allow_download: false`, `local_files_only: true` |
+
+The 19 document features are unchanged (exact names and ordering preserved):
 
 ```
 gltr_token_count, gltr_mean_prob, gltr_median_prob, gltr_std_prob,
@@ -105,9 +117,22 @@ gltr_frac_rank_le_{10,100,1000}, gltr_frac_rank_gt_1000,
 gltr_entropy_{mean,median,std}
 ```
 
-Run `estimate-gltr` before any real run to size the job (token count, batches,
-estimated time). GLTR-style predictability is a **statistical signal, not proof
-of authorship**.
+How the values are computed (all real GPT-2 inference, never synthetic):
+
+* For token position `t` the model's logits at position `t-1` predict it — the
+  causal shift is explicit, so no token is scored using its own future.
+* Probabilities are the softmax of the shifted logits gathered at the realised
+  next token; ranks are `1 + #{vocabulary items with a strictly higher logit}`
+  against the **full 50,257-token** vocabulary; entropy is measured over the
+  shifted distribution; perplexity is `exp(-mean log p)`.
+* Documents longer than 256 tokens are split into overlapping windows and each
+  target token is counted exactly once (never double-counted, never truncated
+  away); empty and single-token texts yield `gltr_token_count = 0` with the
+  remaining features left empty (`NaN`), never zero.
+
+`estimate-gltr` sizes a run before executing it. GLTR-style predictability is a
+**statistical signal, not proof of authorship**.
+
 
 ## 4. Module D — statistical watermark verification
 
@@ -147,13 +172,13 @@ identifiers, metadata and labels separate:
 | `syntactic_graph` | `data/processed/graph_features.csv` (`gsyn_*`) | yes |
 | `stylometric` | `stylometric_features.csv` | yes |
 | `writeprints` | `writeprints_features.csv` | yes |
-| `gltr` | `gltr_features.csv` | no (unavailable) |
+| `gltr` | `gltr_features.csv` | yes (16 of 19 selected) |
 | `watermark` | `watermark_results.csv` | evidence only |
 
 * Sample IDs and graph IDs are preserved; metadata and category labels live in a
   **separate** table (`fused_multiview_metadata.csv`) and are never model inputs.
 * Branch columns are namespaced `"<branch>__<feature>"`; missing branches are
-  handled without error (the GLTR branch contributes 0 columns).
+  handled without error (a branch with no values contributes 0 columns).
 * Feature selection (configurable): drop columns above the missing threshold,
   constant columns, and one of each highly-correlated pair.
 * A versioned schema (`fingerprint_feature_schema.json`) records the feature set
@@ -163,8 +188,10 @@ identifiers, metadata and labels separate:
   (`watermark_as_feature: false`), so an unsupported detection cannot become an
   artificial negative class.
 
-**Pilot result:** 631 candidate columns → **408 selected** (30 dropped missing,
-26 constant, 167 correlated).
+**Pilot result:** 650 candidate columns → **424 selected** (30 dropped missing,
+26 constant, 170 correlated). GLTR contributes 16 columns; 3 GLTR columns
+(`gltr_token_count`, `gltr_mean_log_rank`, `gltr_frac_rank_gt_1000`) are dropped
+as correlated redundancies of retained features.
 
 ## 6. Experiments (prepared, not trained)
 
@@ -176,11 +203,11 @@ Declared in `configs/fingerprint_config.yaml`; nothing is trained or split.
 | E2 | syntactic graph | 95 |
 | E3 | text fingerprinting | 140 |
 | E4 | writeprints | 301 |
-| E5 | GLTR-style | 0 (unavailable) |
+| E5 | GLTR-style | 19 |
 | E6 | lexical + syntactic graphs | 190 |
 | E7 | graphs + fingerprinting | 330 |
-| E8 | graphs + fingerprinting + GLTR | 330 |
-| E9 | all supported branches (+ optional watermark evidence) | 631 |
+| E8 | graphs + fingerprinting + GLTR | 349 |
+| E9 | all supported branches (+ optional watermark evidence) | 650 |
 
 ## 7. Outputs
 
@@ -191,9 +218,10 @@ Declared in `configs/fingerprint_config.yaml`; nothing is trained or split.
 | `stylometric_features.csv` | 500 × 141 |
 | `writeprints_features.csv` / `.npz` | 500 × 302 |
 | `writeprints_vocabulary.json` | — |
-| `gltr_features.csv` | 500 × 20 (unavailable/NaN) |
+| `gltr_features.csv` | 500 × 20 (real GPT-2 values) |
+| `gltr_features.checkpoint.csv` (+ `.meta.json`) | resumable GLTR checkpoint |
 | `watermark_results.csv` | 500 × 13 |
-| `fused_multiview_features.csv` | 500 × 409 |
+| `fused_multiview_features.csv` | 500 × 425 |
 | `fused_multiview_metadata.csv` | 500 × 13 |
 | `fingerprint_feature_schema.json` | — |
 
@@ -221,51 +249,112 @@ Undefined features are emitted as `NaN` and never imputed.
 |---|---:|---:|---:|
 | stylometric | 140 | 0.015 | 0.736 |
 | writeprints | 301 | 0.000 | 0.000 |
-| gltr | 19 | 1.000 | 1.000 |
+| gltr | 19 | 0.000 | 0.000 |
 | watermark | 8 (feature cols) | 1.000 | 1.000 |
-| fused | 408 | 0.000 | 0.000 |
+| fused | 424 | 0.000 | 0.000 |
 
-The GLTR column is entirely missing because the model is unavailable. The
-stylometric maximum is the MSTTR / very-short-text family, undefined for texts
-shorter than one 50-word segment. Fused columns have no missing values because
-selection drops columns above the 30% missing threshold.
+The GLTR branch is fully populated: all 19 features are present and finite for
+all 500 samples (0 processing errors). The stylometric maximum is the MSTTR /
+very-short-text family, undefined for texts shorter than one 50-word segment.
+The watermark feature columns are entirely missing because no watermark key is
+configured (all rows are `unsupported`). Fused columns have no missing values
+because selection drops columns above the 30% missing threshold.
 
 ## 10. Execution and resources
 
-Full pilot run (`fingerprint_pipeline.py all`): **500/500 samples**, 140 + 301 +
-19 + 12 branch features, fused to 408; **≈100.8 s**, **peak 141.8 MB** RSS,
-single process, CPU-only.
+Full pilot run (`fingerprint_pipeline.py all --no-resume`, offline):
+**500/500 samples**, 140 + 301 + 19 + 12 branch features, fused to 424;
+**1261.4 s** wall time, single process, CPU-only.
+
+GLTR-only measurement (500 samples, dedicated benchmark):
+
+| Metric | Value |
+|---|---|
+| Wall time | 1017.7 s (≈17 min); ≈2.0 s/sample |
+| Peak working set (RSS) | 1320.2 MB |
+| Model load | ≈21 s (478 MB from `models/gltr/gpt2/`) |
+| Forwards | 1 per window batch (dynamically padded, batch 4) |
+| Token counts | min 8, max 2320, mean 110.1 per document |
+| Samples with features | 500 / 500 |
+| Processing errors | 0 |
+
+The pipeline's own `tracemalloc` peak (887 MB) tracks Python allocations only
+and excludes the native PyTorch model tensors, so the ≈1.32 GB working-set
+figure above is the number to use for memory planning. The model is loaded
+exactly once per run; the analyzer holds a single copy.
 
 ## 11. Offline guarantees
 
 `offline_execution_report.md` records: `network required: false`, `auto model
-download: false`, `gltr allow_download: false`, `transformers/torch installed:
-false`, `spacy installed: true`, `watermark key configured: false`. spaCy and
-the Hugging Face cache are used locally only.
+download: false`, `gltr allow_download: false`, `gltr local_files_only: true`,
+`gltr execution: executed`, `transformers installed: true`, `torch installed:
+true`, `spacy installed: true`, `cuda available: false`, `watermark key
+configured: false`. spaCy and the Hugging Face cache are used locally only.
+
+The model is downloaded **once** by `scripts/download_gltr_model.py` (the only
+code path that touches the network for GLTR). Every experiment then sets
+`HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`, loads from `models/gltr/gpt2/`
+with `local_files_only=True`, and never contacts the Hub. The full 500-sample
+`all --no-resume` run above was executed with both offline flags set and made no
+network calls.
 
 ## 12. Limitations
 
 * Stylometric and writeprints features describe **style**, not authorship.
 * The writeprints vocabulary is fit on the pilot corpus for extraction only; a
   real experiment must fit it on the train split to avoid leakage.
-* GLTR is implemented but **not executed** here (no local causal LM); it is
-  never downloaded automatically.
+* GLTR is executed with the GPT-2 base model as a **reference**, not as an
+  authorship detector: high predictability is not proof of AI authorship and low
+  predictability is not proof of human authorship. GPT-2 (2019) is smaller and
+  older than the models that generate modern text, so absolute probabilities are
+  reference-relative.
+* Per-token features are averaged over a document, so very short texts (min 8
+  scored tokens here) are noisier than long ones.
 * Watermark verification is only meaningful for the exact scheme and key used at
   generation time; absence of detection is not evidence of human authorship.
 * The pilot is an engineering sample; no formal split exists and no model was
   trained or evaluated.
 
-## 13. Commands
+## 13. Setup, download and commands
+
+**Install the CPU-only GLTR extra** (one time). The `+cpu` PyTorch wheel comes
+from the PyTorch CPU index, so no CUDA runtime is pulled in:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements\gltr.txt
+```
+
+This installs `torch==2.15.0+cpu`, `transformers==5.23.0`,
+`tokenizers>=0.23.1,<0.24.0`, `safetensors>=0.8.0`.
+
+**Download the reference model** (one time, network required). This is the only
+step that touches the network:
+
+```powershell
+# downloads gpt2@607a30d783dfa663caf39e06633721c8d4cfcd7e -> models\gltr\gpt2
+.\.venv\Scripts\python.exe scripts\download_gltr_model.py
+# re-download over an existing copy:
+.\.venv\Scripts\python.exe scripts\download_gltr_model.py --force
+```
+
+**Run offline** (no network). Every experiment loads the model from
+`models\gltr\gpt2\` with `local_files_only=True`; the flags below make an
+accidental Hub call fail fast:
+
+```powershell
+$env:HF_HUB_OFFLINE="1"
+$env:TRANSFORMERS_OFFLINE="1"
+
 # whole pipeline (stylometric + writeprints + gltr + watermark + fusion + reports)
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py all
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py all --no-resume   # ignore the GLTR checkpoint
 
 # individual branches
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py stylometric
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py writeprints
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py watermark
-.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr          # reports unavailable without a local model
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr --limit 50
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py fuse
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py reports
 
@@ -275,3 +364,9 @@ the Hugging Face cache are used locally only.
 # validation
 .\.venv\Scripts\python.exe scripts\validate_fingerprint_features.py
 ```
+
+Long GLTR runs checkpoint to
+`data\processed\fingerprinting\gltr_features.checkpoint.csv` (plus a
+`.meta.json` keyed to model/revision/max_length/stride/feature set). A re-run
+resumes by default; `--no-resume` reprocesses everything.
+

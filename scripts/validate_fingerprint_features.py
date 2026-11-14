@@ -47,8 +47,13 @@ FAIL = "fail"
 
 # Columns that may legitimately hold negative values. Flesch Reading Ease and
 # Flesch-Kincaid Grade are both defined on the whole real line for very hard or
-# very short texts.
-SIGNED_SUFFIXES = ("read_flesch_reading_ease", "read_flesch_kincaid_grade")
+# very short texts. GLTR's mean log-probability is the mean of log p(token),
+# which is negative by definition (log of a probability in (0, 1]).
+SIGNED_SUFFIXES = (
+    "read_flesch_reading_ease",
+    "read_flesch_kincaid_grade",
+    "gltr_mean_log_prob",
+)
 
 # Columns that must lie in [0, 1]. Matched by suffix so branch-prefixed fused
 # columns (e.g. ``stylometric__sent_long_ratio``) are covered too.

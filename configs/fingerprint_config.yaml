@@ -137,24 +137,32 @@ writeprints:
 # Module C — GLTR-style local token analysis
 # --------------------------------------------------------------------------- #
 gltr:
-  # A locally cached causal language model. No download is attempted unless
-  # allow_download is explicitly true (it defaults to false, and the pipeline
-  # reports the module as unavailable when the model is missing).
+  # A locally cached causal language model. Download it ONCE with
+  # scripts/download_gltr_model.py, then experiments load it offline from
+  # model_dir. No download is attempted during experiments (allow_download is
+  # false) and the pipeline reports the module as unavailable when it is missing.
   model_name: gpt2
-  revision: null
+  model_dir: models/gltr/gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e   # pinned gpt2 main commit
   allow_download: false
   local_files_only: true
-  device: auto            # auto | cpu | cuda
+  device: cpu             # auto | cpu | cuda (no GPU assumed; CPU-only supported)
   dtype: float32
-  batch_size: 4
-  max_length: 512
-  stride: 0               # 0 disables sliding-window scoring
+  eval_mode: true         # model.eval(); inference runs under torch.inference_mode()
+  batch_size: 4           # 2-4 keeps CPU memory modest
+  max_length: 256         # tokens per window
+  stride: 128             # sliding-window overlap; <=0 disables sliding windows
   # Rank thresholds used for the "low-rank / high-rank" proportions.
   rank_thresholds: [10, 100, 1000]
   # Fraction of the highest-probability vocabulary treated as "top".
   top_p: 0.9
   # Seed for any sampling; inference is greedy/deterministic.
   seed: 42
+  # Intermediate checkpointing so a long CPU run can resume without redoing work.
+  checkpoint:
+    enabled: true
+    path: data/processed/fingerprinting/gltr_features.checkpoint.csv
+    every: 25
 
 # --------------------------------------------------------------------------- #
 # Module D — statistical watermark verification

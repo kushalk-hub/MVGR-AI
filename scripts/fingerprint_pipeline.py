@@ -233,7 +233,54 @@ def run_writeprints(
 # --------------------------------------------------------------------------- #
 # Module C — GLTR
 # --------------------------------------------------------------------------- #
-def run_gltr(config: dict[str, Any], frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _gltr_checkpoint_meta(analyzer: GltrAnalyzer, config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "feature_set_version": config["gltr_version"],
+        "model_name": analyzer.config.model_name,
+        "revision": analyzer.config.revision,
+        "max_length": analyzer.config.max_length,
+        "stride": analyzer.config.stride,
+        "rank_thresholds": list(analyzer.config.rank_thresholds),
+        "feature_names": analyzer.feature_names,
+    }
+
+
+def _load_gltr_checkpoint(
+    path: Path, analyzer: GltrAnalyzer, config: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Load a checkpoint only when it matches the current model/feature config."""
+    meta_path = path.with_suffix(path.suffix + ".meta.json")
+    if not path.exists() or not meta_path.exists():
+        return {}
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    if meta != _gltr_checkpoint_meta(analyzer, config):
+        return {}
+    try:
+        frame = pd.read_csv(path, dtype={"sample_id": str})
+    except Exception:  # noqa: BLE001
+        return {}
+    return {str(record["sample_id"]): record for record in frame.to_dict("records")}
+
+
+def _write_gltr_checkpoint(
+    path: Path, processed: dict[str, dict[str, Any]], analyzer: GltrAnalyzer, config: dict[str, Any]
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    columns = ["sample_id", *analyzer.feature_names]
+    frame = pd.DataFrame(list(processed.values()), columns=columns)
+    frame.to_csv(path, index=False)
+    meta_path = path.with_suffix(path.suffix + ".meta.json")
+    meta_path.write_text(
+        json.dumps(_gltr_checkpoint_meta(analyzer, config), indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def run_gltr(
+    config: dict[str, Any], frame: pd.DataFrame, *, resume: bool = True
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     cfg = config.get("gltr", {})
     analyzer = GltrAnalyzer.from_config(cfg)
     available, reason = analyzer.availability()
@@ -252,8 +299,11 @@ def run_gltr(config: dict[str, Any], frame: pd.DataFrame) -> tuple[pd.DataFrame,
             "module": "gltr",
             "version": config["gltr_version"],
             "available": False,
+            "execution_status": "unavailable",
             "reason": reason,
             "model_name": cfg.get("model_name"),
+            "model_dir": cfg.get("model_dir"),
+            "revision": cfg.get("revision"),
             "allow_download": bool(cfg.get("allow_download", False)),
             "samples": int(len(frame)),
             "features": len(analyzer.feature_names),
@@ -261,19 +311,81 @@ def run_gltr(config: dict[str, Any], frame: pd.DataFrame) -> tuple[pd.DataFrame,
         return placeholder, status
 
     analyzer.load()
-    rows: list[dict[str, Any]] = []
-    for sample_id, text in zip(
-        frame[config["input"]["id_column"]], frame[config["input"]["text_column"]]
-    ):
-        rows.append({"sample_id": sample_id, **analyzer.extract(str(text))})
-    table = pd.DataFrame(rows)
+    id_column = config["input"]["id_column"]
+    text_column = config["input"]["text_column"]
+    sample_ids = [str(value) for value in frame[id_column].tolist()]
+    texts = [str(value) for value in frame[text_column].tolist()]
+
+    checkpoint_cfg = cfg.get("checkpoint", {}) or {}
+    checkpoint_enabled = bool(checkpoint_cfg.get("enabled", True))
+    checkpoint_path = resolve(
+        checkpoint_cfg.get("path", "data/processed/fingerprinting/gltr_features.checkpoint.csv")
+    )
+    checkpoint_every = max(1, int(checkpoint_cfg.get("every", 25)))
+
+    processed: dict[str, dict[str, Any]] = {}
+    if checkpoint_enabled and resume:
+        processed = _load_gltr_checkpoint(checkpoint_path, analyzer, config)
+    errors: list[dict[str, Any]] = []
+
+    pending = [(sid, text) for sid, text in zip(sample_ids, texts) if sid not in processed]
+    batch_size = max(1, int(cfg.get("batch_size", 4) or 1))
+    done = 0
+    for offset in range(0, len(pending), batch_size):
+        chunk = pending[offset : offset + batch_size]
+        try:
+            features_list = list(
+                analyzer.extract_many([text for _, text in chunk], batch_size=batch_size)
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate a failing batch per sample
+            features_list = []
+            for sid, text in chunk:
+                try:
+                    features_list.append(analyzer.extract(text))
+                except Exception as inner:  # noqa: BLE001
+                    errors.append(
+                        {"sample_id": sid, "error": f"{type(inner).__name__}: {inner}"}
+                    )
+                    features_list.append({name: None for name in analyzer.feature_names})
+        for (sid, _), features in zip(chunk, features_list):
+            processed[sid] = {"sample_id": sid, **features}
+        done += len(chunk)
+        if checkpoint_enabled and (
+            done % checkpoint_every < batch_size or offset + batch_size >= len(pending)
+        ):
+            _write_gltr_checkpoint(checkpoint_path, processed, analyzer, config)
+    if checkpoint_enabled:
+        _write_gltr_checkpoint(checkpoint_path, processed, analyzer, config)
+
+    empty_row = {"sample_id": None, **{name: None for name in analyzer.feature_names}}
+    rows = [
+        processed.get(sid, {**empty_row, "sample_id": sid})
+        for sid in sample_ids
+    ]
+    table = pd.DataFrame(rows, columns=columns)
+    for name in analyzer.feature_names:
+        table[name] = pd.to_numeric(table[name], errors="coerce")
+    samples_with_features = (
+        int(table[analyzer.feature_names].notna().any(axis=1).sum())
+        if analyzer.feature_names
+        else 0
+    )
     status = {
         "module": "gltr",
         "version": config["gltr_version"],
         "available": True,
+        "execution_status": "executed",
         "model": analyzer.model.describe() if analyzer.model else {},
         "samples": int(len(table)),
-        "features": int(table.shape[1] - 1),
+        "samples_with_features": samples_with_features,
+        "features": len(analyzer.feature_names),
+        "checkpoint": {
+            "enabled": checkpoint_enabled,
+            "path": str(checkpoint_path),
+            "resumed": int(len(sample_ids) - len(pending)),
+        },
+        "error_count": len(errors),
+        "errors": errors[:50],
     }
     return table, status
 
@@ -468,6 +580,12 @@ def _write_reports(
     ]
     for name, status in payload["modules"].items():
         notes = status.get("reason") or ""
+        if not notes and name == "gltr" and status.get("model"):
+            model = status["model"]
+            notes = (
+                f"{model.get('model_name')}@{model.get('revision')} "
+                f"device={model.get('device')} max_length={model.get('max_length')}"
+            )
         if not notes:
             normalization = status.get("normalization")
             if isinstance(normalization, dict):
@@ -485,6 +603,25 @@ def _write_reports(
         f"- Elapsed: {payload['execution']['seconds']} s",
         f"- Peak memory: {payload['execution']['peak_memory_mb']} MB",
         "",
+    ]
+    gltr_status = payload["modules"].get("gltr", {})
+    gltr_model = gltr_status.get("model") or {}
+    if gltr_status.get("available") and gltr_model:
+        lines += [
+            "## GLTR reference model",
+            "",
+            f"- Model: `{gltr_model.get('model_name')}` revision `{gltr_model.get('revision')}`",
+            f"- Storage: `{gltr_model.get('model_dir')}` (source: {gltr_model.get('source_kind')})",
+            f"- Device: {gltr_model.get('device')} (cuda available: {gltr_model.get('cuda_available')})",
+            f"- dtype: {gltr_model.get('dtype')} | max_length: {gltr_model.get('max_length')} "
+            f"| batch_size: {gltr_model.get('batch_size')} | stride: {gltr_model.get('stride')}",
+            f"- torch: {gltr_model.get('torch_version')} | transformers: {gltr_model.get('transformers_version')}",
+            f"- Samples with features: {gltr_status.get('samples_with_features')} "
+            f"/ {gltr_status.get('samples')}",
+            f"- Processing errors: {gltr_status.get('error_count', 0)}",
+            "",
+        ]
+    lines += [
         "## Missing-value statistics",
         "",
     ]
@@ -546,13 +683,20 @@ def _write_reports(
     ]
     for key, value in offline.items():
         off_lines.append(f"| {key} | {value} |")
+    gltr_note = (
+        "- GLTR loads the reference model only from a local directory or the local "
+        "Hugging Face cache (`allow_download` is false); no model is downloaded during "
+        "an experiment."
+        if offline.get("gltr available")
+        else "- GLTR never downloads a model: `allow_download` defaults to false and the "
+        "module reports itself unavailable when no local model is cached."
+    )
     off_lines += [
         "",
         "## Guarantees",
         "",
         "- No API calls, no cloud services, no telemetry.",
-        "- GLTR never downloads a model: `allow_download` defaults to false and the "
-        "module reports itself unavailable when no local model is cached.",
+        gltr_note,
         "- The watermark key is read from an environment variable and is never "
         "written to disk or printed.",
         "- spaCy and the Hugging Face cache are used locally only.",
@@ -594,8 +738,14 @@ def cmd_writeprints(
     return payload["status"]
 
 
-def cmd_gltr(config: dict[str, Any], frame: pd.DataFrame, artifacts: dict[str, Any]) -> dict[str, Any]:
-    table, status = run_gltr(config, frame)
+def cmd_gltr(
+    config: dict[str, Any],
+    frame: pd.DataFrame,
+    artifacts: dict[str, Any],
+    *,
+    resume: bool = True,
+) -> dict[str, Any]:
+    table, status = run_gltr(config, frame, resume=resume)
     _to_records(table, resolve(config["outputs"]["gltr"]))
     artifacts["gltr_features.csv"] = int(len(table))
     return status
@@ -648,9 +798,24 @@ def _collect_comparison(config: dict[str, Any], frame: pd.DataFrame) -> dict[str
         with open(schema_path, "r", encoding="utf-8") as handle:
             fused_schema = json.load(handle)
 
+    gltr_stats = branches.get("gltr")
+    gltr_available = bool(gltr_stats and gltr_stats.get("max_missing_fraction", 1.0) < 1.0)
+    if gltr_available:
+        gltr_limitation = (
+            "GLTR-style predictability is available (local GPT-2, CPU) and describes "
+            "how predictable the text is under the reference model; it is a statistical "
+            "signal, not proof of authorship."
+        )
+    else:
+        gltr_limitation = (
+            "GLTR-style predictability is unavailable without a local causal LM and is "
+            "never downloaded automatically."
+        )
+
     comparison = {
         "branches": branches,
         "missing": missing,
+        "gltr_available": gltr_available,
         "fusion_selection": (fused_schema or {}).get("selection", {}),
         "experiments": (fused_schema or {}).get("experiments", {}),
         "limitations": [
@@ -658,8 +823,7 @@ def _collect_comparison(config: dict[str, Any], frame: pd.DataFrame) -> dict[str
             "statistical signals, not proof of authorship.",
             "Writeprints vocabulary is fit on the pilot corpus for feature extraction "
             "only; a real experiment must fit it on the train split.",
-            "GLTR-style predictability is unavailable without a local causal LM and is "
-            "never downloaded automatically.",
+            gltr_limitation,
             "Watermark verification is only meaningful for the exact scheme and key "
             "used at generation time; absence of detection is not evidence of human "
             "authorship.",
@@ -674,20 +838,29 @@ def _collect_offline(config: dict[str, Any], statuses: dict[str, Any]) -> dict[s
     import importlib.util
 
     gltr_status = statuses.get("gltr", {})
+    model = gltr_status.get("model") or {}
     return {
         "transformers installed": importlib.util.find_spec("transformers") is not None,
         "torch installed": importlib.util.find_spec("torch") is not None,
         "spacy installed": importlib.util.find_spec("spacy") is not None,
         "gltr available": gltr_status.get("available"),
+        "gltr execution": gltr_status.get("execution_status"),
         "gltr reason": gltr_status.get("reason", ""),
+        "gltr model": model.get("model_name", gltr_status.get("model_name")),
+        "gltr revision": model.get("revision", gltr_status.get("revision")),
+        "gltr model_dir": model.get("model_dir", gltr_status.get("model_dir")),
+        "gltr source": model.get("source_kind"),
+        "gltr device": model.get("device"),
         "gltr allow_download": gltr_status.get("allow_download", False),
+        "gltr local_files_only": model.get("local_files_only", True),
+        "cuda available": model.get("cuda_available"),
         "watermark key configured": statuses.get("watermark", {}).get("key_configured"),
         "network required": False,
         "auto model download": False,
     }
 
 
-def cmd_all(config: dict[str, Any], frame: pd.DataFrame, limit: int | None) -> int:
+def cmd_all(config: dict[str, Any], frame: pd.DataFrame, limit: int | None, *, resume: bool = True) -> int:
     tracemalloc.start()
     started = time.perf_counter()
     artifacts: dict[str, Any] = {}
@@ -703,7 +876,7 @@ def cmd_all(config: dict[str, Any], frame: pd.DataFrame, limit: int | None) -> i
 
     statuses["stylometric"] = cmd_stylometric(config, frame, artifacts, corpus=corpus)
     statuses["writeprints"] = cmd_writeprints(config, frame, artifacts, corpus=corpus)
-    statuses["gltr"] = cmd_gltr(config, frame, artifacts)
+    statuses["gltr"] = cmd_gltr(config, frame, artifacts, resume=resume)
     statuses["watermark"] = cmd_watermark(config, frame, artifacts)
     statuses["fusion"] = cmd_fuse(config, frame, artifacts)
 
@@ -742,6 +915,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
     parser.add_argument("--limit", type=int, default=None, help="process only the first N pilot rows")
+    parser.add_argument("--no-resume", action="store_true", help="ignore any GLTR checkpoint and reprocess")
     parser.add_argument("--config", default=CONFIG_NAME)
     args = parser.parse_args(argv)
 
@@ -758,7 +932,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "all":
-        return cmd_all(config, frame, args.limit)
+        return cmd_all(config, frame, args.limit, resume=not args.no_resume)
 
     artifacts: dict[str, Any] = {}
     statuses: dict[str, Any] = {}
@@ -767,7 +941,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "writeprints":
         statuses["writeprints"] = cmd_writeprints(config, frame, artifacts)
     elif args.command == "gltr":
-        statuses["gltr"] = cmd_gltr(config, frame, artifacts)
+        statuses["gltr"] = cmd_gltr(config, frame, artifacts, resume=not args.no_resume)
     elif args.command == "watermark":
         statuses["watermark"] = cmd_watermark(config, frame, artifacts)
     elif args.command == "fuse":

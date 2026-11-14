@@ -1,13 +1,19 @@
-# Module C — GLTR-style local token analysis.
+# Module C — GLTR-style local token analysis (CPU-only reference setup).
 #
 # Optional extra. The pipeline runs without it and reports GLTR as unavailable;
-# nothing is downloaded automatically. To enable GLTR, install this extra and
-# place a causal language model in the local Hugging Face cache, e.g.:
+# nothing is downloaded automatically.
+#
+# CPU-only PyTorch: the +cpu wheels come from the PyTorch CPU index, so no CUDA
+# runtime is pulled in. Install once:
 #
 #   pip install -r requirements/gltr.txt
-#   huggingface-cli download gpt2          # once, with network access
+#   python scripts/download_gltr_model.py     # one-off, network required
 #
-# Inference then runs offline (HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1).
+# Inference then runs fully offline (HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1)
+# loading the reference model from models/gltr/gpt2.
 -r base.txt
-torch>=2.3
-transformers>=4.44
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0+cpu
+transformers==5.23.0
+tokenizers>=0.23.1,<0.24.0
+safetensors>=0.8.0

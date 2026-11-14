@@ -25,7 +25,8 @@ neo4j = ["neo4j>=5.24", "python-dotenv>=1.0"]
 gnn = ["torch>=2.3", "torch-geometric>=2.5"]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
 # Module C (GLTR). Optional: without it the GLTR branch reports as unavailable.
-gltr = ["torch>=2.3", "transformers>=4.44"]
+# CPU-only reference build: see requirements/gltr.txt for the pinned +cpu torch.
+gltr = ["torch>=2.6", "transformers>=5.23", "tokenizers>=0.23.1,<0.24.0", "safetensors>=0.8.0"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]

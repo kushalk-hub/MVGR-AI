@@ -46,7 +46,8 @@ assumptions about the datasets.
 * Offline fingerprinting, writeprints, GLTR, watermark verification and feature
   fusion are implemented and tested (see
   [`11_fingerprint_gltr_watermark.md`](11_fingerprint_gltr_watermark.md)). The
-  full 500-sample pilot extraction ran and its validator passes 41/41. GLTR is
-  implemented but reports **unavailable** because no local causal LM is
-  installed; it never downloads a model automatically. No model was trained and
-  no formal split was generated.
+  full 500-sample pilot extraction ran and its validator passes 41/41. GLTR now
+  runs for real on the CPU with the locally stored GPT-2 base model (revision
+  `607a30d783dfa663caf39e06633721c8d4cfcd7e`, `models/gltr/gpt2/`); the model is
+  downloaded only by the explicit one-off script and every experiment loads it
+  offline. No model was trained and no formal split was generated.

@@ -215,6 +215,54 @@ python -m pytest
 
 ---
 
+## Offline fingerprinting, GLTR and watermark (pilot)
+
+The 500-sample engineering pilot runs four additional **offline** analysis
+branches and fuses them with the graph features (feature extraction only — no
+model is trained, no formal split is generated, no test set is touched):
+
+| Branch | Features | Notes |
+|---|---:|---|
+| Stylometric (Module A) | 140 | vocabulary, sentence, punctuation, POS, syntactic, readability |
+| Writeprints (Module B) | 301 | bounded char/word/POS n-grams, function words |
+| GLTR (Module C) | 19 | real GPT-2 next-token probability/rank/entropy/perplexity |
+| Watermark (Module D) | 12 | evidence only; never a model feature |
+| Fusion (Module E) | 424 selected | identifiers/metadata/labels kept separate |
+
+### GLTR on CPU (no GPU)
+
+GLTR scores how predictable each token is under a **local** GPT-2 base model
+(124M parameters, pinned revision
+`607a30d783dfa663caf39e06633721c8d4cfcd7e`, stored in `models/gltr/gpt2/`).
+It uses correct causal shifting (a token is scored from its preceding context),
+ranks against the full 50,257-token vocabulary, and runs on CPU with
+`model.eval()` and `torch.inference_mode()`, dynamic padding, attention masks,
+batched windows (`max_length: 256`, `stride: 128`) and intermediate
+checkpointing. No CUDA is required or assumed.
+
+```powershell
+# 1) one-off CPU-only install (torch +cpu, transformers, tokenizers)
+.\.venv\Scripts\python.exe -m pip install -r requirements\gltr.txt
+
+# 2) one-off explicit model download (the ONLY network step)
+.\.venv\Scripts\python.exe scripts\download_gltr_model.py
+
+# 3) run offline — no downloads during experiments
+$env:HF_HUB_OFFLINE="1"; $env:TRANSFORMERS_OFFLINE="1"
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py all
+.\.venv\Scripts\python.exe scripts\validate_fingerprint_features.py
+```
+
+Measured on the pilot (CPU-only): 500/500 samples, 0 errors, all 19 features
+finite, ≈1018 s for GLTR alone and ≈1261 s for the whole pipeline, peak RSS
+≈1.32 GB. The model is never downloaded automatically (`allow_download: false`,
+`local_files_only: true`); see
+[`reports/final/11_fingerprint_gltr_watermark.md`](reports/final/11_fingerprint_gltr_watermark.md)
+for the full design, offline procedure and limitations.
+
+---
+
 ## Dataset sources
 
 * BiScope — <https://huggingface.co/datasets/HanxiGuo/BiScope_Data>
