@@ -30,6 +30,7 @@ assumptions about the datasets.
 | 20 | Dataset audit findings | [`08_dataset_audit_findings.md`](08_dataset_audit_findings.md) |
 | 21 | Graph feature pipeline (Phases A–F) | [`09_graph_feature_pipeline.md`](09_graph_feature_pipeline.md) |
 | 22 | Frontend (design and contract) | [`10_frontend.md`](10_frontend.md) |
+| 23 | Offline fingerprinting, GLTR and watermark verification | [`11_fingerprint_gltr_watermark.md`](11_fingerprint_gltr_watermark.md) |
 
 ## Status
 
@@ -42,3 +43,10 @@ assumptions about the datasets.
 * The GNN package requires the optional `gnn` extra (PyTorch + PyG), which is
   not installed in the reference environment.
 * The frontend is a documented placeholder; no UI code is written this phase.
+* Offline fingerprinting, writeprints, GLTR, watermark verification and feature
+  fusion are implemented and tested (see
+  [`11_fingerprint_gltr_watermark.md`](11_fingerprint_gltr_watermark.md)). The
+  full 500-sample pilot extraction ran and its validator passes 41/41. GLTR is
+  implemented but reports **unavailable** because no local causal LM is
+  installed; it never downloads a model automatically. No model was trained and
+  no formal split was generated.

@@ -19,12 +19,16 @@ from fingerprinting.sha256 import (
     sha256_normalized,
     sha256_text,
 )
+from fingerprinting.stylometry import StylometricExtractor
+from fingerprinting.writeprints import WriteprintsExtractor
 
 __all__ = [
     "MinHash",
     "MinHashError",
     "NgramFingerprint",
     "ReferenceIndex",
+    "StylometricExtractor",
+    "WriteprintsExtractor",
     "build_index",
     "exact_fingerprint",
     "fingerprint",

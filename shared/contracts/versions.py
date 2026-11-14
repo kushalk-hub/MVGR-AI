@@ -23,6 +23,16 @@ SPLIT_POLICY_VERSION = "split.v1"
 TOKENIZER_VERSION = "tokenizer.v1"
 FEATURE_SET_VERSION = "features.v1"
 
+# Fingerprinting / GLTR / watermark / fusion feature branches (offline analysis).
+# Each branch is versioned independently so a change to one branch's definition
+# never silently rewrites another branch's artifact.
+FINGERPRINT_FEATURE_VERSION = "fingerprint.v1"
+STYLOMETRIC_VERSION = "stylometric.v1"
+WRITEPRINTS_VERSION = "writeprints.v1"
+GLTR_VERSION = "gltr.v1"
+WATERMARK_VERSION = "watermark.v1"
+FUSION_VERSION = "fusion.v1"
+
 CONTRACT_VERSIONS: dict[str, str] = {
     "graph_schema": GRAPH_SCHEMA_VERSION,
     "graph_spec": GRAPH_SPEC_VERSION,
@@ -34,4 +44,10 @@ CONTRACT_VERSIONS: dict[str, str] = {
     "split_policy": SPLIT_POLICY_VERSION,
     "tokenizer": TOKENIZER_VERSION,
     "feature_set": FEATURE_SET_VERSION,
+    "fingerprint_feature": FINGERPRINT_FEATURE_VERSION,
+    "stylometric": STYLOMETRIC_VERSION,
+    "writeprints": WRITEPRINTS_VERSION,
+    "gltr": GLTR_VERSION,
+    "watermark": WATERMARK_VERSION,
+    "fusion": FUSION_VERSION,
 }

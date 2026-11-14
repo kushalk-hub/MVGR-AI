@@ -1,6 +1,6 @@
 # MVGR-AI — completed work status
 
-_Last updated: 2026-11-13. Every number below was produced by running the code in
+_Last updated: 2026-11-14. Every number below was produced by running the code in
 this repository, not copied from a plan._
 
 This file is a single snapshot of **what is actually finished** versus **what is
@@ -13,12 +13,13 @@ blocked or not started**. The authoritative design docs live in
 
 | Item | Value |
 |---|---|
-| Test suite | **70 collected — 69 passed, 1 skipped** (`python -m pytest`) |
+| Test suite | **132 passed, 2 skipped** (`python -m pytest`) |
 | Dataset (canonical) | `data/processed/mvgr_ai_combined.parquet`, **128,709 rows**, SHA-256 `9c824a63…b917`, version `mvgr-ai/2026-11-13` |
 | Provenance | byte-identical to immutable `datasets/processed/` (`match: true`) |
 | `features.v1` | **77** deterministic features |
 | Neo4j pilot (live) | **500 samples, 1,000 graphs, 102,822 token nodes, 254,028 relationships** |
 | Graph feature extraction | **complete** — 500/500 samples, 1,000/1,000 views, 147.6 s |
+| Offline fingerprinting | **complete** — 500/500 samples, stylometric 140 + writeprints 301 + GLTR 19 (unavailable) + watermark 12 → fused 408, ~100.8 s |
 | Split manifest | **not approved** (3 candidates exist) |
 | Models trained | **none** |
 | Frontend | **not implemented** (design doc only) |
@@ -149,7 +150,52 @@ Full extraction run (`--no-resume`): **500/500 samples, 1,000/1,000 views,
 * `graph_embeddings.npy` intentionally **not produced** (no validated embedding
   method).
 
-## 10. Backend — DONE
+## 10. Offline fingerprinting, GLTR, watermark and fusion — DONE
+
+Read-only extension of the pilot; feature extraction only (no training, no
+formal split, no test-set access). New versioned outputs under
+`data/processed/fingerprinting/`; existing graph artifacts are never
+overwritten.
+
+* **Module A — stylometric fingerprinting** (`fingerprinting/stylometry.py` +
+  `vocabulary_/sentence_/punctuation_/pos_/syntactic_/readability_features.py`):
+  **140** features (vocab 26, sentence 19, punctuation 28, POS 32, syntactic 30,
+  readability 5). Reuses local spaCy (`en_core_web_sm`); POS/syntactic/
+  readability-syllable features degrade to `NaN` without it.
+* **Module B — writeprints-style** (`fingerprinting/writeprints.py`): **301**
+  bounded sparse features (char/word/POS n-grams, punctuation patterns,
+  function words, summary), written as CSV + CSR `.npz`. Frequency
+  normalization; configurable vocabulary limits.
+* **Module C — GLTR-style** (`gltr/`): full local causal-LM pipeline
+  (`local_model.py`, `token_probability.py`, `token_rank.py`,
+  `entropy_analysis.py`, `document_features.py`, `pipeline.py`), **19**
+  document features. **Unavailable in this environment** (`transformers`/`torch`
+  not installed; `allow_download: false`), so it emits an all-`NaN` placeholder
+  and never downloads a model. `estimate-gltr` sizes a real run first.
+* **Module D — watermark verification** (`watermark/statistics.py`,
+  `unigram.py`, `topic.py`): Kirchenbauer-style unigram green-list detector
+  (gamma 0.25, z- and p-value thresholds) + topic-conditioned interface
+  (unsupported without a known protocol). **12** evidence columns; key read from
+  `MVGR_WATERMARK_KEY`, never stored or printed. With no key, all 500 rows are
+  `unsupported`; absence of detection is never reported as human authorship.
+* **Module E — fusion** (`fusion/multiview_feature_fusion.py`): joins
+  lexical/syntactic graph branches with stylometric/writeprints/GLTR and keeps
+  watermark as auxiliary evidence. Identifiers/metadata/labels stay in a
+  separate table. Pilot: **631 candidates → 408 selected** (30 missing, 26
+  constant, 167 correlated).
+* **Config/versions**: `configs/fingerprint_config.yaml`; new version constants
+  in `shared/contracts/versions.py` (`fingerprint.v1`, `stylometric.v1`,
+  `writeprints.v1`, `gltr.v1`, `watermark.v1`, `fusion.v1`). `pyproject.toml`
+  gains the optional `gltr` extra and `gltr*`/`fusion*` packages.
+* **Full pilot run**: 500/500 samples, ~100.8 s, peak 141.8 MB.
+* **Validation** (`scripts/validate_fingerprint_features.py`): **PASS 41/41**
+  (schema, coverage, duplicates, sample alignment, leakage, value ranges,
+  missing-value thresholds, watermark status validity, GLTR availability
+  consistency).
+* Reports in `outputs/fingerprint_audit/`; design write-up in
+  [`reports/final/11_fingerprint_gltr_watermark.md`](reports/final/11_fingerprint_gltr_watermark.md).
+
+## 11. Backend — DONE
 
 `backend/` FastAPI app: `GET /health`, `GET /v1/contracts/versions`,
 `POST /v1/analyze`. Report assembly always returns a contract-valid report and
@@ -157,7 +203,7 @@ degrades honestly (`classification.status = "unavailable"` when no model bundle
 is present). Optional `api` extra; routes are covered by a test that skips when
 FastAPI is absent.
 
-## 11. Tests — DONE (69 pass, 1 skipped)
+## 12. Tests — DONE (132 pass, 2 skipped)
 
 | File | Tests | Covers |
 |---|---:|---|
@@ -165,10 +211,18 @@ FastAPI is absent.
 | `tests/test_deterministic.py` | 17 | `features.v1`, families, scoring, guards |
 | `tests/test_graph.py` | 11 | builders, graph contract, build identity, export |
 | `tests/test_graph_features.py` | 22 | feature math, selection gates, leakage, verifier detection, live-DB |
+| `tests/test_fingerprinting.py` | 17 | stylometric families, empty/short/long text, POS/syntactic degradation, schema |
+| `tests/test_writeprints.py` | 10 | n-gram vocab bounds, normalization, sparse/dense consistency |
+| `tests/test_gltr.py` | 14 | tokenizer alignment, causal shift, missing-model handling (skips without a local LM) |
+| `tests/test_watermark.py` | 11 | green-list statistics, key handling, unsupported schemes, no-false-negative rule |
+| `tests/test_feature_fusion.py` | 12 | branch join, identifier/metadata separation, selection, schema |
 | `tests/test_integration.py` | 6 | end-to-end graph → features → score → evaluate |
-| **Total** | **70** | **69 passed, 1 skipped** |
+| **Total** | **134** | **132 passed, 2 skipped** |
 
-## 12. Documentation — DONE
+The two skips are the GLTR local-model test (no causal LM installed) and the
+FastAPI integration test (optional `api` extra absent).
+
+## 13. Documentation — DONE
 
 `reports/final/` is the authoritative set:
 
@@ -185,8 +239,9 @@ FastAPI is absent.
 | 08 | Dataset audit findings |
 | 09 | Graph feature pipeline (Phases A–F) |
 | 10 | Frontend (design and contract) |
+| 11 | Offline fingerprinting, GLTR and watermark verification |
 
-## 13. Frontend — NOT IMPLEMENTED (design ready)
+## 14. Frontend — NOT IMPLEMENTED (design ready)
 
 * `frontend/README.md` is a placeholder; no UI code exists.
 * A complete design/interface spec is written in
@@ -204,6 +259,8 @@ FastAPI is absent.
 | Model training (deterministic/GBM) | **Not started** | Requires an approved split. |
 | GNN training | **Not started** | Requires approved split **and** PyTorch + PyG (not installed). |
 | Test-set evaluation | **Not run** | Test lock held until the manifest is approved. |
+| GLTR execution | **Not run** | No local causal LM; `transformers`/`torch` not installed. Module reports unavailable and never auto-downloads. |
+| Fingerprint/GLTR/watermark features as model inputs | **Not started** | Extraction only; a real experiment is gated on the approved split (and must fit writeprints vocab on train). |
 | Frontend implementation | **Not started** | Roadmap Phase 8. |
 | `graph_embeddings.npy` | **Skipped** | No validated embedding method implemented. |
 
@@ -242,6 +299,10 @@ python mvgr.py lineage
 .\.venv\Scripts\python.exe scripts\extract_graph_features.py
 .\.venv\Scripts\python.exe scripts\validate_graph_features.py
 .\.venv\Scripts\python.exe scripts\prepare_ml_dataset.py
+
+# offline fingerprinting / writeprints / GLTR / watermark / fusion (pilot)
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py all
+.\.venv\Scripts\python.exe scripts\validate_fingerprint_features.py
 
 # contract smoke test
 python mvgr.py contracts --validate

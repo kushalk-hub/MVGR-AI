@@ -24,6 +24,8 @@ syntactic = ["spacy>=3.7"]
 neo4j = ["neo4j>=5.24", "python-dotenv>=1.0"]
 gnn = ["torch>=2.3", "torch-geometric>=2.5"]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
+# Module C (GLTR). Optional: without it the GLTR branch reports as unavailable.
+gltr = ["torch>=2.3", "transformers>=4.44"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
@@ -40,6 +42,8 @@ include = [
     "baseline*",
     "fingerprinting*",
     "watermark*",
+    "gltr*",
+    "fusion*",
     "graph_engine*",
     "evaluation*",
     "backend*",

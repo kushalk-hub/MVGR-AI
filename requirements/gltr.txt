@@ -1,0 +1,13 @@
+# Module C — GLTR-style local token analysis.
+#
+# Optional extra. The pipeline runs without it and reports GLTR as unavailable;
+# nothing is downloaded automatically. To enable GLTR, install this extra and
+# place a causal language model in the local Hugging Face cache, e.g.:
+#
+#   pip install -r requirements/gltr.txt
+#   huggingface-cli download gpt2          # once, with network access
+#
+# Inference then runs offline (HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1).
+-r base.txt
+torch>=2.3
+transformers>=4.44

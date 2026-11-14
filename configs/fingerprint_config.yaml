@@ -1,0 +1,269 @@
+# MVGR-AI fingerprinting / GLTR / watermark / fusion configuration.
+#
+# Owner: Person 1 (features, evidence, evaluation) with Person 2 review for the
+# graph branch. This file defines the *new* offline analysis branches. It does
+# not change the existing graph feature pipeline, the dataset contract, or any
+# approved/candidate split manifest.
+#
+# Credentials are NEVER stored here. The watermark key is referenced by the NAME
+# of an environment variable only; the value is read from the environment or the
+# optional .env file at the repository root.
+
+fingerprint_version: "fingerprint.v1"
+stylometric_version: "stylometric.v1"
+writeprints_version: "writeprints.v1"
+gltr_version: "gltr.v1"
+watermark_version: "watermark.v1"
+fusion_version: "fusion.v1"
+
+# --------------------------------------------------------------------------- #
+# input scope
+# --------------------------------------------------------------------------- #
+input:
+  # The 500-row engineering pilot. Read-only. This is NOT the formal training
+  # dataset; feature extraction only, no training and no split generation.
+  pilot_csv: data/derived/mvgr_graph_pilot_500.csv
+  text_column: text
+  id_column: sample_id
+  # Metadata carried through but never used as a model feature.
+  metadata_columns:
+    - label
+    - source_dataset
+    - source_task
+    - text_type
+    - graph_category
+    - paraphrase_status
+    - domain
+    - ai_model
+    - padben_split
+    - split
+    - group_id
+    - source_row_id
+  # Existing graph feature artifacts consumed by the fusion branch (read-only).
+  graph_features: data/processed/graph_features.csv
+  sample_multiview_features: data/processed/sample_multiview_features.csv
+
+# --------------------------------------------------------------------------- #
+# Module A — stylometric text fingerprinting
+# --------------------------------------------------------------------------- #
+stylometric:
+  spacy_model: en_core_web_sm
+  # spaCy pipeline components used. The parser provides dependency structure; the
+  # tagger provides POS. The syntactic graph view uses the same model.
+  spacy_disable: ["ner"]
+  # Fixed word-length histogram bins (characters per word).
+  word_length_bins: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20]
+  # Fixed sentence-length histogram bins (words per sentence).
+  sentence_length_bins: [1, 5, 10, 15, 20, 25, 30, 40, 50, 75]
+  long_sentence_words: 25
+  short_sentence_words: 8
+  # Minimum segment length for the mean segmental type-token ratio (MSTTR).
+  msttr_segment_words: 50
+  # Top-K dependency relations kept as explicit share columns (the rest are
+  # folded into an "other" share). Bounded to avoid uncontrolled expansion.
+  top_dependency_relations: 15
+  # Passive and subordinate-clause identification uses spaCy dependency labels.
+  passive_labels: ["auxpass", "nsubjpass", "aux:pass", "nsubj:pass"]
+  subordinate_labels: ["mark", "advcl", "ccomp", "xcomp", "acl", "relcl", "csubj"]
+
+# --------------------------------------------------------------------------- #
+# Module B — writeprints-style stylometry (sparse n-gram features)
+# --------------------------------------------------------------------------- #
+writeprints:
+  seed: 42
+  # Per-group vocabulary limits. The vocabulary is selected by document
+  # frequency (descending) with a deterministic name tie-break, so the feature
+  # order is reproducible. Kept deliberately bounded.
+  vocab_limits:
+    char_unigram: 30
+    char_bigram: 40
+    char_trigram: 40
+    word_unigram: 60
+    word_bigram: 30
+    pos_unigram: 20
+    pos_bigram: 24
+    punct_pattern: 16
+  # Normalization applied to the emitted frequency columns.
+  # one of: raw_count | frequency | tfidf | l2
+  normalization: frequency
+  min_document_frequency: 1
+  # Function words are a fixed, closed list; their frequencies are always kept.
+  # Quoted deliberately: unquoted YAML would parse words like `on`, `no`, `off`
+  # as booleans instead of strings.
+  function_words:
+    - "the"
+    - "be"
+    - "to"
+    - "of"
+    - "and"
+    - "a"
+    - "in"
+    - "that"
+    - "have"
+    - "i"
+    - "it"
+    - "for"
+    - "not"
+    - "on"
+    - "with"
+    - "he"
+    - "as"
+    - "you"
+    - "do"
+    - "at"
+    - "this"
+    - "but"
+    - "his"
+    - "by"
+    - "from"
+    - "they"
+    - "we"
+    - "say"
+    - "her"
+    - "she"
+    - "or"
+    - "an"
+    - "will"
+    - "my"
+    - "one"
+    - "all"
+    - "would"
+    - "there"
+    - "their"
+    - "what"
+  save_sparse_npz: true
+
+# --------------------------------------------------------------------------- #
+# Module C — GLTR-style local token analysis
+# --------------------------------------------------------------------------- #
+gltr:
+  # A locally cached causal language model. No download is attempted unless
+  # allow_download is explicitly true (it defaults to false, and the pipeline
+  # reports the module as unavailable when the model is missing).
+  model_name: gpt2
+  revision: null
+  allow_download: false
+  local_files_only: true
+  device: auto            # auto | cpu | cuda
+  dtype: float32
+  batch_size: 4
+  max_length: 512
+  stride: 0               # 0 disables sliding-window scoring
+  # Rank thresholds used for the "low-rank / high-rank" proportions.
+  rank_thresholds: [10, 100, 1000]
+  # Fraction of the highest-probability vocabulary treated as "top".
+  top_p: 0.9
+  # Seed for any sampling; inference is greedy/deterministic.
+  seed: 42
+
+# --------------------------------------------------------------------------- #
+# Module D — statistical watermark verification
+# --------------------------------------------------------------------------- #
+watermark:
+  default_provider: unsupported
+  providers:
+    - id: unigram_greenlist
+      enabled: true
+      # Kirchenbauer-style unigram green-list detector. Requires a key.
+      gamma: 0.25          # green-list fraction
+      hash_seed: 0
+      window: 1            # conditioning on the previous token (h=1)
+      z_threshold: 4.0     # z above which a watermark is "detected"
+      p_value_threshold: 1.0e-5
+    - id: topic_conditioned
+      enabled: true
+      # Only verifiable when the generation + verification protocol is known.
+      # No protocol is configured, so this returns unsupported.
+      protocol_known: false
+  # The key is read from this environment variable (never stored in this file).
+  key_env: MVGR_WATERMARK_KEY
+  # Statuses follow watermark.verifier.DetectionStatus.
+  statuses: [detected, not_detected, unsupported, inconclusive]
+  # Absence of detection is never evidence of human authorship.
+  interpret_absence_as: not_evidence_of_human_authorship
+
+# --------------------------------------------------------------------------- #
+# Module E — multi-view feature fusion
+# --------------------------------------------------------------------------- #
+fusion:
+  # Branches are combined in this order. The graph branch reads the existing
+  # per-view tables; the others read the fingerprinting outputs.
+  branches:
+    - lexical_graph
+    - syntactic_graph
+    - stylometric
+    - writeprints
+    - gltr
+    - watermark          # auxiliary; never a model feature by default
+  # The watermark branch is evidence, not a predictive feature. It is written to
+  # the metadata table and never into the feature matrix, so an unsupported
+  # detection cannot become an artificial negative class.
+  watermark_as_feature: false
+  normalization: none     # none | zscore | robust | minmax
+  feature_selection:
+    max_missing_fraction: 0.30
+    constant_feature_tolerance: 1.0e-12
+    high_correlation_threshold: 0.98
+    drop_constant: true
+    drop_high_correlation: true
+  # Identifier / metadata columns are preserved separately and are never model
+  # inputs (mirrors the graph pipeline's leakage policy).
+  identifier_columns:
+    - sample_id
+    - graph_id
+    - build_id
+  metadata_columns:
+    - label
+    - source_dataset
+    - source_task
+    - text_type
+    - graph_category
+    - paraphrase_status
+    - domain
+    - ai_model
+    - padben_split
+    - split
+    - group_id
+    - source_row_id
+
+# --------------------------------------------------------------------------- #
+# experiments (prepared, not trained)
+# --------------------------------------------------------------------------- #
+experiments:
+  # Each experiment names the feature branches that make up its input matrix.
+  # No model is trained and no split is generated; these are declarations only.
+  E1: {name: "lexical graph", branches: [lexical_graph]}
+  E2: {name: "syntactic graph", branches: [syntactic_graph]}
+  E3: {name: "text fingerprinting", branches: [stylometric]}
+  E4: {name: "writeprints", branches: [writeprints]}
+  E5: {name: "GLTR-style", branches: [gltr]}
+  E6: {name: "lexical + syntactic graphs", branches: [lexical_graph, syntactic_graph]}
+  E7: {name: "graphs + fingerprinting", branches: [lexical_graph, syntactic_graph, stylometric]}
+  E8: {name: "graphs + fingerprinting + GLTR", branches: [lexical_graph, syntactic_graph, stylometric, gltr]}
+  E9: {name: "all supported branches (+ optional watermark evidence)", branches: [lexical_graph, syntactic_graph, stylometric, writeprints, gltr], optional_evidence: [watermark]}
+
+# --------------------------------------------------------------------------- #
+# outputs
+# --------------------------------------------------------------------------- #
+outputs:
+  root: data/processed/fingerprinting
+  stylometric: data/processed/fingerprinting/stylometric_features.csv
+  writeprints: data/processed/fingerprinting/writeprints_features.csv
+  writeprints_vocab: data/processed/fingerprinting/writeprints_vocabulary.json
+  writeprints_sparse: data/processed/fingerprinting/writeprints_features.npz
+  gltr: data/processed/fingerprinting/gltr_features.csv
+  watermark: data/processed/fingerprinting/watermark_results.csv
+  fused: data/processed/fingerprinting/fused_multiview_features.csv
+  fused_metadata: data/processed/fingerprinting/fused_multiview_metadata.csv
+  schema: data/processed/fingerprinting/fingerprint_feature_schema.json
+  report_dir: outputs/fingerprint_audit
+  report_json: outputs/fingerprint_audit/fingerprint_extraction_report.json
+  report_md: outputs/fingerprint_audit/fingerprint_extraction_report.md
+  comparison_md: outputs/fingerprint_audit/feature_comparison_report.md
+  offline_md: outputs/fingerprint_audit/offline_execution_report.md
+
+validation:
+  max_missing_fraction: 0.30
+  require_unique_sample_ids: true
+  require_metadata_separate: true
+  require_no_identifier_features: true
