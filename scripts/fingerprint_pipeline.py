@@ -172,6 +172,56 @@ def run_stylometric(
 # --------------------------------------------------------------------------- #
 # Module B — writeprints
 # --------------------------------------------------------------------------- #
+def _vocabulary_scope_mask(
+    config: dict[str, Any], frame: pd.DataFrame
+) -> list[bool]:
+    """Which rows may be used to fit the writeprints vocabulary.
+
+    The vocabulary is a *learned* step: it decides which n-grams become
+    features. Fitting it on the evaluation rows would let the test set
+    influence the feature space, so a scope can restrict the fit to the
+    training split.
+
+    ``writeprints.vocabulary_scope`` accepts::
+
+        mode: all            fit on every row (the default, for extraction-only runs)
+        mode: split_file     fit on the rows of a split assignment file
+
+    A split scope reads ``split_file`` (a CSV with ``sample_id`` and
+    ``split_column``) and keeps the rows whose split value is listed in
+    ``split_values``. If the file is missing the fit falls back to every row.
+    """
+    scope = (config.get("writeprints", {}) or {}).get("vocabulary_scope") or {}
+    mode = str(scope.get("mode", "all"))
+    if mode != "split_file":
+        return [True] * len(frame)
+
+    split_file = scope.get("split_file")
+    if not split_file:
+        return [True] * len(frame)
+    path = resolve(split_file)
+    if not path.exists():
+        return [True] * len(frame)
+
+    assignment = pd.read_csv(path, dtype=str, keep_default_na=False)
+    id_column = config["input"]["id_column"]
+    split_column = str(scope.get("split_column", "model_split"))
+    wanted = {str(value) for value in scope.get("split_values", ["train"])}
+
+    if split_column not in assignment.columns:
+        return [True] * len(frame)
+    lookup = dict(
+        zip(
+            assignment[id_column].astype(str),
+            assignment[split_column].astype(str),
+            strict=True,
+        )
+    )
+    return [
+        lookup.get(str(sample_id), "") in wanted for sample_id in frame[id_column]
+    ]
+
+
 def run_writeprints(
     config: dict[str, Any],
     frame: pd.DataFrame,
@@ -186,16 +236,25 @@ def run_writeprints(
             list(stylo_cfg.get("spacy_disable", ["ner"])),
         )
 
+    # The vocabulary is learned; only the rows the scope allows may shape it.
+    scope_mask = _vocabulary_scope_mask(config, frame)
+    fit_texts: list[str] = []
+    fit_tokens: list[Any] = []
+    fit_pos: list[Any] = []
+    for parsed, keep in zip(corpus, scope_mask, strict=True):
+        if keep:
+            fit_texts.append(parsed["text"])
+            fit_tokens.append(parsed["tokens"])
+            fit_pos.append(parsed["pos_tags"])
+
     extractor = WriteprintsExtractor(config=cfg)
-    extractor.fit(
-        [parsed["text"] for parsed in corpus],
-        [parsed["tokens"] for parsed in corpus],
-        [parsed["pos_tags"] for parsed in corpus],
-    )
+    extractor.fit(fit_texts, fit_tokens, fit_pos)
 
     rows: list[dict[str, Any]] = []
     sparse_rows: list[np.ndarray] = []
-    for sample_id, parsed in zip(frame[config["input"]["id_column"]], corpus):
+    for sample_id, parsed in zip(
+        frame[config["input"]["id_column"]], corpus, strict=True
+    ):
         rows.append(
             {
                 "sample_id": sample_id,
@@ -226,7 +285,15 @@ def run_writeprints(
         "features": int(table.shape[1] - 1),
         "normalization": extractor.normalization,
         "vocab_sizes": {group: len(items) for group, items in vocabulary["groups"].items()},
+        "vocabulary_fit_rows": int(sum(scope_mask)),
+        "vocabulary_scope": (
+            "train_split_only"
+            if scope_mask and not all(scope_mask)
+            else "all_rows"
+        ),
     }
+    vocabulary["fit_scope"] = status["vocabulary_scope"]
+    vocabulary["fit_rows"] = status["vocabulary_fit_rows"]
     return table, {"table": table, "vocabulary": vocabulary, "status": status}
 
 
@@ -276,6 +343,27 @@ def _write_gltr_checkpoint(
     meta_path.write_text(
         json.dumps(_gltr_checkpoint_meta(analyzer, config), indent=2) + "\n", encoding="utf-8"
     )
+
+
+def _sort_by_token_length(
+    analyzer: GltrAnalyzer, pending: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """Order documents by token length so padded batches stay homogeneous.
+
+    The order of the returned list does not change any feature value: padding
+    is masked out of the forward pass and the per-document aggregation is
+    order-invariant. It only reduces the padded work per batch.
+    """
+    tokenizer = analyzer.model._tokenizer  # noqa: SLF001
+    encoded = tokenizer(
+        [text for _, text in pending],
+        padding=False,
+        truncation=False,
+        add_special_tokens=True,
+    )
+    lengths = [len(ids) for ids in encoded["input_ids"]]
+    order = sorted(range(len(pending)), key=lambda index: lengths[index])
+    return [pending[index] for index in order]
 
 
 def run_gltr(
@@ -330,12 +418,23 @@ def run_gltr(
 
     pending = [(sid, text) for sid, text in zip(sample_ids, texts) if sid not in processed]
     batch_size = max(1, int(cfg.get("batch_size", 4) or 1))
+    # Processing documents from shortest to longest keeps the dynamically padded
+    # batches homogeneous. Padding is masked out, so the features are identical.
+    sort_by_length = bool(cfg.get("length_sorted_batching", False))
+    if sort_by_length and pending:
+        pending = _sort_by_token_length(analyzer, pending)
     done = 0
+    started = time.perf_counter()
+    total_pending = len(pending)
     for offset in range(0, len(pending), batch_size):
         chunk = pending[offset : offset + batch_size]
         try:
             features_list = list(
-                analyzer.extract_many([text for _, text in chunk], batch_size=batch_size)
+                analyzer.extract_many(
+                    [text for _, text in chunk],
+                    batch_size=batch_size,
+                    sort_by_length=False,
+                )
             )
         except Exception as exc:  # noqa: BLE001 - isolate a failing batch per sample
             features_list = []
@@ -354,6 +453,19 @@ def run_gltr(
             done % checkpoint_every < batch_size or offset + batch_size >= len(pending)
         ):
             _write_gltr_checkpoint(checkpoint_path, processed, analyzer, config)
+        checkpoint_due = done % max(1, checkpoint_every // 5) < batch_size
+        if checkpoint_due or offset + batch_size >= total_pending:
+            elapsed = time.perf_counter() - started
+            rate = done / elapsed if elapsed > 0 else 0.0
+            remaining = (total_pending - done) / rate if rate > 0 else float("nan")
+            print(
+                f"[gltr] {done}/{total_pending} samples "
+                f"({100.0 * done / max(1, total_pending):.1f}%) "
+                f"elapsed {elapsed:.1f}s | {rate:.2f} samples/s | "
+                f"eta {remaining / 60.0:.1f} min | errors {len(errors)}",
+                file=sys.stderr,
+                flush=True,
+            )
     if checkpoint_enabled:
         _write_gltr_checkpoint(checkpoint_path, processed, analyzer, config)
 
@@ -518,6 +630,99 @@ def run_fuse(config: dict[str, Any], frame: pd.DataFrame) -> tuple[Any, dict[str
 # --------------------------------------------------------------------------- #
 # reports
 # --------------------------------------------------------------------------- #
+def _collect_module_statuses(config: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild the per-module statuses from the artifacts on disk.
+
+    The ``reports`` command has to be able to regenerate the report without
+    re-running the extraction, so the availability, row counts and feature
+    counts are read from the written tables instead of from a previous run.
+    The GLTR reference model is read from the checkpoint metadata, which
+    records the model, the revision and the windowing settings.
+    """
+    outputs = config["outputs"]
+    id_column = config["input"]["id_column"]
+    statuses: dict[str, Any] = {}
+
+    for name, key in (
+        ("stylometric", "stylometric"),
+        ("writeprints", "writeprints"),
+        ("gltr", "gltr"),
+        ("watermark", "watermark"),
+    ):
+        table = _read_if_exists(resolve(outputs[key]))
+        if table is None:
+            statuses[name] = {
+                "module": name,
+                "available": False,
+                "samples": 0,
+                "features": 0,
+                "reason": f"artifact missing at {outputs[key]}",
+            }
+            continue
+        numeric = [
+            column
+            for column in table.columns
+            if column != id_column and pd.api.types.is_numeric_dtype(table[column])
+        ]
+        status: dict[str, Any] = {
+            "module": name,
+            "available": True,
+            "samples": int(len(table)),
+            "features": len(numeric),
+        }
+        if name == "gltr":
+            status["execution_status"] = "executed"
+            status["samples_with_features"] = int(
+                table[numeric].notna().any(axis=1).sum()
+            ) if numeric else 0
+            status["model"] = _gltr_model_info(config)
+        statuses[name] = status
+
+    return statuses
+
+
+def _gltr_model_info(config: dict[str, Any]) -> dict[str, Any]:
+    """The GLTR reference model, as recorded by the run that produced it."""
+    cfg = config.get("gltr", {}) or {}
+    checkpoint_cfg = cfg.get("checkpoint", {}) or {}
+    path = resolve(
+        checkpoint_cfg.get(
+            "path", "data/processed/fingerprinting/gltr_features.checkpoint.csv"
+        )
+    )
+    meta_path = path.with_suffix(path.suffix + ".meta.json")
+    meta: dict[str, Any] = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            meta = {}
+
+    info: dict[str, Any] = {
+        "model_name": meta.get("model_name") or cfg.get("model_name"),
+        "revision": meta.get("revision") or cfg.get("revision"),
+        "model_dir": cfg.get("model_dir"),
+        "source_kind": "local_dir",
+        "device": cfg.get("device"),
+        "dtype": cfg.get("dtype"),
+        "max_length": meta.get("max_length") or cfg.get("max_length"),
+        "stride": meta.get("stride") if meta.get("stride") is not None else cfg.get("stride"),
+        "batch_size": cfg.get("batch_size"),
+        "eval_mode": cfg.get("eval_mode"),
+        "local_files_only": cfg.get("local_files_only"),
+        "allow_download": cfg.get("allow_download"),
+        "cuda_available": False,
+    }
+    try:
+        import torch
+
+        info["torch_version"] = torch.__version__
+        info["cuda_available"] = bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001
+        info["torch_version"] = None
+    return info
+
+
 def _report_payload(
     config: dict[str, Any],
     statuses: dict[str, Any],
@@ -592,6 +797,12 @@ def _write_reports(
                 notes = f"normalization={normalization.get('method', 'none')}"
             elif normalization:
                 notes = str(normalization)
+        scope = status.get("vocabulary_scope")
+        if scope:
+            fit_rows = status.get("vocabulary_fit_rows")
+            notes = (
+                f"{notes}; " if notes else ""
+            ) + f"vocabulary fit scope={scope} ({fit_rows} rows)"
         lines.append(
             f"| {name} | {status.get('available')} | {status.get('samples', '')} | "
             f"{status.get('features', '')} | {notes} |"
@@ -736,6 +947,31 @@ def cmd_writeprints(
         handle.write("\n")
     artifacts["writeprints_features.csv"] = int(len(table))
     return payload["status"]
+
+
+def cmd_text_branches(
+    config: dict[str, Any],
+    frame: pd.DataFrame,
+    artifacts: dict[str, Any],
+) -> dict[str, Any]:
+    """Run the stylometric, writeprints and watermark branches.
+
+    The corpus is parsed once with spaCy and shared by the two stylometric
+    branches, so the documents are not parsed twice. GLTR is deliberately not
+    part of this command: it needs the reference language model and takes
+    much longer, so it is run separately (and resumable).
+    """
+    stylo_cfg = config.get("stylometric", {})
+    corpus = _parse_corpus(
+        frame[config["input"]["text_column"]].tolist(),
+        stylo_cfg.get("spacy_model", "en_core_web_sm"),
+        list(stylo_cfg.get("spacy_disable", ["ner"])),
+    )
+    statuses: dict[str, Any] = {}
+    statuses["stylometric"] = cmd_stylometric(config, frame, artifacts, corpus=corpus)
+    statuses["writeprints"] = cmd_writeprints(config, frame, artifacts, corpus=corpus)
+    statuses["watermark"] = cmd_watermark(config, frame, artifacts)
+    return statuses
 
 
 def cmd_gltr(
@@ -911,7 +1147,7 @@ def main(argv: list[str] | None = None) -> int:
         "command",
         choices=[
             "all", "stylometric", "writeprints", "gltr", "watermark",
-            "fuse", "reports", "estimate-gltr",
+            "fuse", "reports", "estimate-gltr", "text",
         ],
     )
     parser.add_argument("--limit", type=int, default=None, help="process only the first N pilot rows")
@@ -944,6 +1180,8 @@ def main(argv: list[str] | None = None) -> int:
         statuses["gltr"] = cmd_gltr(config, frame, artifacts, resume=not args.no_resume)
     elif args.command == "watermark":
         statuses["watermark"] = cmd_watermark(config, frame, artifacts)
+    elif args.command == "text":
+        statuses = cmd_text_branches(config, frame, artifacts)
     elif args.command == "fuse":
         statuses["fusion"] = cmd_fuse(config, frame, artifacts)
     elif args.command == "reports":
@@ -955,6 +1193,22 @@ def main(argv: list[str] | None = None) -> int:
             existing = json.loads(report_path.read_text(encoding="utf-8"))
         statuses = existing.get("modules", {})
         artifacts = existing.get("artifacts", {})
+        # The module statuses are rebuilt from the artifacts on disk so the
+        # report is consistent with what is actually stored, even when the
+        # branches were run one at a time.
+        statuses = _collect_module_statuses(config)
+        # The writeprints vocabulary scope is recorded in its own artifact, so
+        # the report reflects the scope that was actually used.
+        vocabulary_path = resolve(config["outputs"]["writeprints_vocab"])
+        if vocabulary_path.exists():
+            vocabulary = json.loads(vocabulary_path.read_text(encoding="utf-8"))
+            writeprints_status = dict(statuses.get("writeprints", {}))
+            writeprints_status.setdefault("available", True)
+            if vocabulary.get("fit_scope"):
+                writeprints_status["vocabulary_scope"] = vocabulary["fit_scope"]
+            if vocabulary.get("fit_rows") is not None:
+                writeprints_status["vocabulary_fit_rows"] = vocabulary["fit_rows"]
+            statuses["writeprints"] = writeprints_status
         comparison = _collect_comparison(config, frame)
         offline = _collect_offline(config, statuses)
         payload = _report_payload(config, statuses, frame, artifacts, 0.0, None)

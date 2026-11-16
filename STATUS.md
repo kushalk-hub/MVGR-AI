@@ -203,6 +203,80 @@ overwritten.
 * Reports in `outputs/fingerprint_audit/`; design write-up in
   [`reports/final/11_fingerprint_gltr_watermark.md`](reports/final/11_fingerprint_gltr_watermark.md).
 
+## 10b. Deterministic detection branch on `10000.csv` — DONE
+
+The statistical branch turned into a **trained, independently evaluated**
+detector. This is separate from the graph branch: nothing in `detection/`
+touches graph construction, graph features or the GNN package.
+
+### Results (the 10,000-row experiment)
+
+* **Features**: all 10,000 rows extracted (stylometric 141, writeprints 302 with
+  a training-only vocabulary, GLTR 19 from real GPT-2, watermark 13 as
+  evidence); fusion produced 460 candidates, the train-only selection kept
+  **375**.
+* **Test-set metrics** (1,504 untouched rows; 319 human / 1,185 AI):
+
+  | model | accuracy | balanced acc. | F1 | ROC-AUC | PR-AUC | FPR | FNR |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | **XGBoost** (best) | **0.9661** | **0.9372** | 0.9787 | **0.9910** | 0.9975 | 0.1129 | 0.0127 |
+  | Logistic Regression | 0.9668 | 0.9400 | 0.9791 | 0.9887 | 0.9967 | 0.1066 | 0.0135 |
+  | SVM (RBF, calibrated) | 0.9594 | 0.9365 | 0.9743 | 0.9896 | 0.9972 | 0.1034 | 0.0236 |
+  | Random Forest | 0.9481 | 0.9110 | 0.9674 | 0.9826 | 0.9952 | 0.1536 | 0.0245 |
+
+  The best model is **XGBoost**, chosen on validation ROC-AUC (0.9923).
+* **Ablation** (test ROC-AUC): stylo-only 0.9128, writeprints-only 0.9600,
+  GLTR-only 0.7484, watermark-only 0.6736, combined 0.9910; dropping
+  writeprints hurts most (0.9306), dropping GLTR slightly helps (0.9913).
+  E9 = E5 by construction (watermark is evidence-only).
+* **Paraphrase robustness**: detection of deeply paraphrased AI text is 0.9980
+  at 0.0020 FNR; the weakest group is *Original Human* text (FPR 0.2609). No
+  paraphrased text was synthesised.
+* **Reproducibility**: the whole run is seeded and reproduces bit-for-bit; it
+  takes ≈25 min on CPU. `models/deterministic/` holds the four models,
+  `best_model.pkl`, `preprocessing_pipeline.pkl` and `model_metadata.json`;
+  `reports/deterministic/` holds seven reports and five figures;
+  `outputs/deterministic/` holds the CSV/JSON artifacts and test predictions.
+
+* **Dataset** `10000.csv` (repository root, 10,000 rows, all valid):
+  **2,148 human / 7,852 AI** (ratio 3.66). 1,694 original, 3,333 paraphrased,
+  3,333 deeply paraphrased, 1,640 unspecified (BiScope). No duplicate ids and
+  no duplicate texts.
+* **Split**: the CSV's own `split` column does not follow the repository's
+  split policy and disagrees with the candidate manifest, so the resolved
+  split reuses `man_20ddf272c292efbc8c8c` for the 7,157 rows it covers and
+  applies the repository's own family-disjoint policy (seed 42, ratios
+  0.70/0.15/0.15) to the remaining 2,843 BiScope rows. Result: train 6,978 /
+  validation 1,518 / test 1,504, with **0** paraphrase families and **0**
+  duplicate texts spanning two splits.
+* **Leakage control**: feature selection and preprocessing are fitted on the
+  **training rows only**; the writeprints n-gram vocabulary — a learned step
+  that decides *which* n-grams exist as features — is fitted on the training
+  split only as well (the split is resolved first, with
+  `train_deterministic.py --stage split`); the shipped 424-column selection
+  was made with the whole pilot table and is replaced by a train-only
+  selection for these experiments (the original artifacts are preserved);
+  tuning uses `StratifiedGroupKFold` on `group_id`; the test split is read
+  once, after the model is chosen on validation.
+* **Models**: Logistic Regression, Random Forest, XGBoost, SVM — each tuned
+  with `RandomizedSearchCV`; the best model is chosen by validation ROC-AUC.
+  The SVM's margin scores are Platt-calibrated on the validation split rather
+  than with `SVC(probability=True)`, which would multiply the search cost by
+  five.
+* **Code**: `detection/` (`dataset_loader`, `feature_alignment`,
+  `preprocessing`, `train_models`, `evaluate_models`, `feature_ablation`,
+  `robustness_evaluation`, `interpretability`, `predictor`, `text_features`),
+  `scripts/train_deterministic.py`, `configs/deterministic_config.yaml`,
+  `requirements/detection.txt`.
+* **Outputs**: `models/deterministic/` (one directory per model plus
+  `best_model.pkl`, `preprocessing_pipeline.pkl`, `model_metadata.json`),
+  `reports/deterministic/` (seven reports + figures),
+  `outputs/deterministic/` (CSV/JSON artifacts, test predictions).
+* **Tests**: `tests/test_detection.py` (30 unit tests; no network, no model
+  needed). The full suite is 168 passed / 1 skipped.
+* Design write-up in
+  [`reports/final/12_deterministic_branch.md`](reports/final/12_deterministic_branch.md).
+
 ## 11. Backend — DONE
 
 `backend/` FastAPI app: `GET /health`, `GET /v1/contracts/versions`,
@@ -211,7 +285,7 @@ degrades honestly (`classification.status = "unavailable"` when no model bundle
 is present). Optional `api` extra; routes are covered by a test that skips when
 FastAPI is absent.
 
-## 12. Tests — DONE (138 pass, 1 skipped)
+## 12. Tests — DONE (168 pass, 1 skipped)
 
 | File | Tests | Covers |
 |---|---:|---|
@@ -224,8 +298,9 @@ FastAPI is absent.
 | `tests/test_gltr.py` | 19 | tokenizer alignment, causal shift, prob/rank/entropy/perplexity math, window coverage, batching equivalence, empty/short text, checkpoint round-trip, missing-model handling, real local GPT-2 inference (offline) |
 | `tests/test_watermark.py` | 11 | green-list statistics, key handling, unsupported schemes, no-false-negative rule |
 | `tests/test_feature_fusion.py` | 12 | branch join, identifier/metadata separation, selection, schema |
+| `tests/test_detection.py` | 30 | `10000.csv` audit, family-disjoint split integrity, train-only selection, preprocessing, metrics, E1–E9 ablation, paraphrase robustness, interpretability, predictor round-trip, margin calibration, graph-independence, text features, vocabulary scope |
 | `tests/test_integration.py` | 6 | end-to-end graph → features → score → evaluate |
-| **Total** | **139** | **138 passed, 1 skipped** |
+| **Total** | **169** | **168 passed, 1 skipped** |
 
 The one skip is the FastAPI integration test (optional `api` extra absent). The
 GLTR tests run offline: the mathematical core is pure NumPy, the model-loading
@@ -318,6 +393,16 @@ $env:HF_HUB_OFFLINE="1"; $env:TRANSFORMERS_OFFLINE="1"
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py all
 .\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr --limit 50
 .\.venv\Scripts\python.exe scripts\validate_fingerprint_features.py
+
+# deterministic detection branch on the 10,000-row dataset
+.\.venv\Scripts\python.exe -m pip install -r requirements\detection.txt
+.\.venv\Scripts\python.exe scripts\train_deterministic.py --stage split
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py text    --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr    --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py fuse    --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py reports --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\validate_fingerprint_features.py --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\train_deterministic.py --stage all
 
 # contract smoke test
 python mvgr.py contracts --validate

@@ -27,6 +27,9 @@ api = ["fastapi>=0.115", "uvicorn>=0.30"]
 # Module C (GLTR). Optional: without it the GLTR branch reports as unavailable.
 # CPU-only reference build: see requirements/gltr.txt for the pinned +cpu torch.
 gltr = ["torch>=2.6", "transformers>=5.23", "tokenizers>=0.23.1,<0.24.0", "safetensors>=0.8.0"]
+# The deterministic detection branch: classical classifiers over the
+# stylometric / writeprints / GLTR features.
+detection = ["scikit-learn>=1.5", "xgboost>=2.1", "matplotlib>=3.9", "shap>=0.46"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
@@ -45,6 +48,7 @@ include = [
     "watermark*",
     "gltr*",
     "fusion*",
+    "detection*",
     "graph_engine*",
     "evaluation*",
     "backend*",

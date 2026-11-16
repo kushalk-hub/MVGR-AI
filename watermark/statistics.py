@@ -23,7 +23,13 @@ def normal_survival(z: float) -> float:
 
 
 def binomial_p_value(successes: int, trials: int, probability: float) -> float | None:
-    """Exact one-sided upper-tail ``P(X >= successes)`` for ``X ~ Binomial``."""
+    """Exact one-sided upper-tail ``P(X >= successes)`` for ``X ~ Binomial``.
+
+    The sum is evaluated in log space. The naive product
+    ``C(n, k) * p**k * (1-p)**(n-k)`` overflows a float as soon as ``n`` is a
+    few thousand, which happens for long documents; the log-space form is
+    exact and stable for every trial count.
+    """
     if trials <= 0:
         return None
     if successes <= 0:
@@ -33,10 +39,26 @@ def binomial_p_value(successes: int, trials: int, probability: float) -> float |
         return 0.0 if successes > 0 else 1.0
     if probability >= 1.0:
         return 1.0
-    total = 0.0
+    successes = min(int(successes), int(trials))
+
+    log_p = math.log(probability)
+    log_q = math.log1p(-probability)
+    log_n_factorial = math.lgamma(trials + 1)
+
+    log_terms: list[float] = []
     for k in range(successes, trials + 1):
-        total += math.comb(trials, k) * (probability ** k) * ((1.0 - probability) ** (trials - k))
-    return min(1.0, total)
+        log_terms.append(
+            log_n_factorial
+            - math.lgamma(k + 1)
+            - math.lgamma(trials - k + 1)
+            + k * log_p
+            + (trials - k) * log_q
+        )
+
+    # Log-sum-exp: the exact tail probability without intermediate overflow.
+    largest = max(log_terms)
+    total = math.exp(largest) * sum(math.exp(value - largest) for value in log_terms)
+    return min(1.0, max(0.0, total))
 
 
 __all__ = ["binomial_p_value", "normal_survival", "z_score"]

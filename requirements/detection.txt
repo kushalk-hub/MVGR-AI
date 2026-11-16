@@ -1,0 +1,14 @@
+# Module D2 — the deterministic detection branch (classical classifiers).
+#
+# The deterministic branch trains Logistic Regression, Random Forest, XGBoost
+# and an SVM over the stylometric / writeprints / GLTR features. It needs no
+# GPU and no neural network framework.
+#
+#   pip install -r requirements/detection.txt
+#
+# xgboost, shap and matplotlib are optional: without them the XGBoost model,
+# the SHAP analysis and the plots are skipped and the other models still run.
+scikit-learn>=1.5,<2.0
+xgboost>=2.1
+matplotlib>=3.9
+shap>=0.46

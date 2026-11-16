@@ -48,11 +48,14 @@ FAIL = "fail"
 # Columns that may legitimately hold negative values. Flesch Reading Ease and
 # Flesch-Kincaid Grade are both defined on the whole real line for very hard or
 # very short texts. GLTR's mean log-probability is the mean of log p(token),
-# which is negative by definition (log of a probability in (0, 1]).
+# which is negative by definition (log of a probability in (0, 1]). The
+# watermark z-score is the standardised deviation of the observed green-list
+# count and is negative whenever the count falls below its expectation.
 SIGNED_SUFFIXES = (
     "read_flesch_reading_ease",
     "read_flesch_kincaid_grade",
     "gltr_mean_log_prob",
+    "watermark_z_score",
 )
 
 # Columns that must lie in [0, 1]. Matched by suffix so branch-prefixed fused
@@ -63,8 +66,13 @@ RATIO_SUFFIXES = (
 
 # "ratio"-named features that are *not* bounded in [0, 1]. The root type-token
 # ratio is the Guiraud index (types / sqrt(tokens)), which grows with vocabulary
-# size and can exceed 1.
-UNBOUNDED_RATIO_SUFFIXES = ("vocab_root_type_token_ratio",)
+# size and can exceed 1. The punctuation density per token is a count per
+# token: a code snippet such as ``def f(x: int) -> str:`` carries more
+# punctuation marks than word tokens, so the ratio can exceed 1.
+UNBOUNDED_RATIO_SUFFIXES = (
+    "vocab_root_type_token_ratio",
+    "punct_per_token",
+)
 
 
 def _check(check_id: str, description: str, actual: Any, expected: Any, status: str,

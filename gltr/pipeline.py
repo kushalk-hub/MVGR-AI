@@ -16,8 +16,9 @@ is neither double-counted nor truncated away.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -90,13 +91,13 @@ class GltrAnalyzer:
     _loaded: bool = False
 
     @classmethod
-    def from_config(cls, config: dict[str, Any] | None) -> "GltrAnalyzer":
+    def from_config(cls, config: dict[str, Any] | None) -> GltrAnalyzer:
         return cls(config=GltrConfig.from_config(config))
 
     def availability(self) -> tuple[bool, str]:
         return GltrModel(config=self.config).availability()
 
-    def load(self) -> "GltrAnalyzer":
+    def load(self) -> GltrAnalyzer:
         if not self._loaded:
             self.model = GltrModel(config=self.config).load()
             self._loaded = True
@@ -185,8 +186,16 @@ class GltrAnalyzer:
         *,
         batch_size: int | None = None,
         progress: Any = None,
+        sort_by_length: bool = False,
     ) -> Iterator[dict[str, float | int | None]]:
-        """Yield one feature mapping per text, in order."""
+        """Yield one feature mapping per text, in the order the texts were given.
+
+        With ``sort_by_length`` the documents are processed from shortest to
+        longest before being batched. Batches are padded to the longest member,
+        so grouping documents of similar length removes most of that padding
+        waste. The result is *identical* either way: padding is masked out and
+        the per-document aggregation is order-invariant.
+        """
         if not self._loaded:
             self.load()
         assert self.model is not None
@@ -195,21 +204,38 @@ class GltrAnalyzer:
         batch_size = max(1, int(batch_size or self.config.batch_size or 1))
         texts = list(texts)
 
-        for offset in range(0, len(texts), batch_size):
-            chunk = texts[offset : offset + batch_size]
+        precomputed: list[list[int]] | None = None
+        order: list[int] = list(range(len(texts)))
+        if sort_by_length:
             encoded = tokenizer(
-                chunk,
+                texts,
                 padding=False,
                 truncation=False,
                 add_special_tokens=True,
             )
-            id_lists = encoded["input_ids"]
+            precomputed = [[int(value) for value in ids] for ids in encoded["input_ids"]]
+            order = sorted(range(len(texts)), key=lambda index: len(precomputed[index]))
 
-            per_doc: list[list[list[np.ndarray]]] = [[[], [], []] for _ in chunk]
+        aggregated: dict[int, dict[str, float | int | None]] = {}
+        for offset in range(0, len(order), batch_size):
+            group = order[offset : offset + batch_size]
+            if precomputed is not None:
+                id_lists = [precomputed[index] for index in group]
+            else:
+                chunk = [texts[index] for index in group]
+                encoded = tokenizer(
+                    chunk,
+                    padding=False,
+                    truncation=False,
+                    add_special_tokens=True,
+                )
+                id_lists = encoded["input_ids"]
+
+            per_doc: list[list[list[np.ndarray]]] = [[[], [], []] for _ in group]
             specs: list[tuple[int, list[int], np.ndarray]] = []
             owners: list[int] = []
             for doc, ids in enumerate(id_lists):
-                for spec in self._windows_for_ids([int(value) for value in ids]):
+                for spec in self._windows_for_ids(list(ids)):
                     specs.append(spec)
                     owners.append(doc)
 
@@ -217,12 +243,14 @@ class GltrAnalyzer:
                 batch_specs = specs[start : start + batch_size]
                 batch_owners = owners[start : start + batch_size]
                 results = self._run_window_batch(batch_specs)
-                for doc, (probability, rank, entropy) in zip(batch_owners, results):
+                for doc, (probability, rank, entropy) in zip(
+                    batch_owners, results, strict=True
+                ):
                     per_doc[doc][0].append(probability)
                     per_doc[doc][1].append(rank)
                     per_doc[doc][2].append(entropy)
 
-            for doc in range(len(chunk)):
+            for doc, index in enumerate(group):
                 probabilities = (
                     np.concatenate(per_doc[doc][0]) if per_doc[doc][0] else np.array([])
                 )
@@ -230,11 +258,14 @@ class GltrAnalyzer:
                 entropies = (
                     np.concatenate(per_doc[doc][2]) if per_doc[doc][2] else np.array([])
                 )
-                yield aggregate_from_arrays(
+                aggregated[index] = aggregate_from_arrays(
                     probabilities, ranks, entropies, rank_thresholds=rank_thresholds
                 )
             if progress is not None:
-                progress(offset + len(chunk), len(texts))
+                progress(offset + len(group), len(texts))
+
+        for index in range(len(texts)):
+            yield aggregated[index]
 
     def extract(self, text: str) -> dict[str, float | int | None]:
         return next(self.extract_many([text]))

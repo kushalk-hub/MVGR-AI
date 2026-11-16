@@ -31,15 +31,18 @@ assumptions about the datasets.
 | 21 | Graph feature pipeline (Phases A–F) | [`09_graph_feature_pipeline.md`](09_graph_feature_pipeline.md) |
 | 22 | Frontend (design and contract) | [`10_frontend.md`](10_frontend.md) |
 | 23 | Offline fingerprinting, GLTR and watermark verification | [`11_fingerprint_gltr_watermark.md`](11_fingerprint_gltr_watermark.md) |
+| 24 | Deterministic AI-text detection branch (`10000.csv`) | [`12_deterministic_branch.md`](12_deterministic_branch.md) |
+| 25 | Deterministic branch — final status report (10k run) | [`13_deterministic_status_report.md`](13_deterministic_status_report.md) |
 
 ## Status
 
 * Architecture, contracts, audit, deterministic features, baselines,
   fingerprinting, watermark, graph builders, export, Neo4j loader, backend, and
   tests are implemented and pass.
-* No model has been trained and no test-set evaluation has been run. The split
-  manifest is **not** approved; the pooled candidate fails the
-  `lineage_resolution` gate by design and requires an explicit waiver.
+* No model has been trained **for the graph branch** and no graph test-set
+  evaluation has been run. The split manifest is **not** approved; the pooled
+  candidate fails the `lineage_resolution` gate by design and requires an
+  explicit waiver.
 * The GNN package requires the optional `gnn` extra (PyTorch + PyG), which is
   not installed in the reference environment.
 * The frontend is a documented placeholder; no UI code is written this phase.
@@ -51,3 +54,13 @@ assumptions about the datasets.
   `607a30d783dfa663caf39e06633721c8d4cfcd7e`, `models/gltr/gpt2/`); the model is
   downloaded only by the explicit one-off script and every experiment loads it
   offline. No model was trained and no formal split was generated.
+* The **deterministic branch** is a separate, trained system over `10000.csv`
+  (see [`12_deterministic_branch.md`](12_deterministic_branch.md) for the design
+  and §8 for the results): its own leakage-safe split, train-only feature
+  selection and preprocessing, four classical classifiers, a nine-way feature
+  ablation, a paraphrase-robustness breakdown and an interpretability report.
+  All 10,000 rows were extracted, the four models were tuned and evaluated on an
+  untouched test split, and XGBoost was selected (test accuracy 0.9661,
+  balanced accuracy 0.9372, ROC-AUC 0.9910). It does not touch the graph branch;
+  the two are integrated later into the hybrid MVGR-AI system. The full status
+  report is [`13_deterministic_status_report.md`](13_deterministic_status_report.md).

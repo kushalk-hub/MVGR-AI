@@ -263,6 +263,63 @@ for the full design, offline procedure and limitations.
 
 ---
 
+## Deterministic AI-text detection (10,000 rows)
+
+The deterministic branch turns the statistical features into a **trained,
+independently evaluated** detector. It is the sibling of the graph branch (the
+teammate's work) and is kept fully independent of it.
+
+| | |
+|---|---|
+| Dataset | `10000.csv` (10,000 records) — the primary dataset |
+| Labels | `0 = Human-authored`, `1 = AI-authored` (paraphrasing never changes authorship) |
+| Features | stylometric 140 + writeprints 301 + GLTR 19 (real GPT-2, offline, CPU); **375** kept after the train-only selection |
+| Split | train 6,978 / validation 1,518 / test 1,504 (family-disjoint) |
+| Models | Logistic Regression, Random Forest, XGBoost, SVM |
+| Best model | **XGBoost** — test accuracy 0.9661, balanced accuracy 0.9372, ROC-AUC 0.9910 |
+| Code | `detection/`, `scripts/train_deterministic.py` |
+| Config | `configs/deterministic_config.yaml` |
+| Models | `models/deterministic/` (`best_model.pkl`) |
+| Reports | `reports/deterministic/` |
+
+```powershell
+# 1) resolve the leakage-safe split (dataset + manifest only, no features needed)
+.\.venv\Scripts\python.exe scripts\train_deterministic.py --stage split
+
+# 2) extract the features for all 10,000 rows (offline, resumable, checkpointed)
+$env:HF_HUB_OFFLINE="1"; $env:TRANSFORMERS_OFFLINE="1"
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py text --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py gltr --config fingerprint_config_10k
+.\.venv\Scripts\python.exe scripts\fingerprint_pipeline.py fuse --config fingerprint_config_10k
+
+# 3) train, evaluate, ablate, stress-test and explain
+.\.venv\Scripts\python.exe scripts\train_deterministic.py --stage all
+```
+
+```python
+from detection.predictor import DeterministicDetector
+
+detector = DeterministicDetector.load("models/deterministic/best_model.pkl")
+result = detector.predict_from_features(features)
+# {"prediction": "AI", "label": 1, "human_probability": 0.18,
+#  "ai_probability": 0.82, "model": "XGBoost", ...}
+```
+
+**Leakage control.** The split is family-disjoint (no paraphrase family and no
+duplicate text spans two splits). Feature selection, preprocessing **and the
+writeprints n-gram vocabulary** — a learned step that decides which n-grams
+exist as features — are all fitted on the **training rows only**, and the
+test split is read once, after the model has been chosen on validation. The
+shipped selection was made with the whole table it was given (the 500-row pilot
+and, for the 10k run, all 10,000 rows), so it is replaced by a train-only
+selection for these experiments; the original artifacts are preserved. For the
+10k matrix the two selections agree (375 features).
+
+See [`reports/final/12_deterministic_branch.md`](reports/final/12_deterministic_branch.md)
+for the full design, the leakage audit and the limitations.
+
+---
+
 ## Dataset sources
 
 * BiScope — <https://huggingface.co/datasets/HanxiGuo/BiScope_Data>

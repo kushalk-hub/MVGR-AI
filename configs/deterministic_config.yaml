@@ -1,0 +1,114 @@
+# MVGR-AI — deterministic (statistical) detection branch configuration.
+#
+# Owner: the deterministic branch. This file drives the training, evaluation,
+# ablation, robustness and interpretability experiments for the 10,000-row
+# dataset `10000.csv`. It does not touch the graph branch, the dataset
+# contract, or any split manifest.
+
+deterministic_version: "deterministic.v1"
+
+# --------------------------------------------------------------------------- #
+# dataset
+# --------------------------------------------------------------------------- #
+dataset:
+  # The primary dataset of the deterministic branch.
+  file: 10000.csv
+  text_column: text
+  id_column: sample_id
+  label_column: label
+  # Label convention. Paraphrasing never changes authorship.
+  label_human: 0
+  label_ai: 1
+
+# --------------------------------------------------------------------------- #
+# features (produced by the existing fingerprinting pipeline)
+# --------------------------------------------------------------------------- #
+features:
+  # The fused feature matrix and its separate metadata table.
+  fused: data/processed/fingerprinting_10k/fused_multiview_features.csv
+  metadata: data/processed/fingerprinting_10k/fused_multiview_metadata.csv
+  # The watermark evidence table (kept out of the feature matrix by design).
+  watermark: data/processed/fingerprinting_10k/watermark_results.csv
+  # The fingerprinting configuration used for the 10,000-row extraction.
+  fingerprint_config: fingerprint_config_10k
+
+# --------------------------------------------------------------------------- #
+# split
+# --------------------------------------------------------------------------- #
+split:
+  # The resolved split column written by detection.dataset_loader.
+  column: model_split
+  # The candidate manifest reused for the rows it covers. It is never modified.
+  manifest: man_20ddf272c292efbc8c8c
+  manifest_dir: data/manifests/candidate/man_20ddf272c292efbc8c8c
+
+# --------------------------------------------------------------------------- #
+# feature selection (fitted on the training rows only)
+# --------------------------------------------------------------------------- #
+selection:
+  max_missing_fraction: 0.30
+  constant_feature_tolerance: 1.0e-12
+  high_correlation_threshold: 0.98
+  drop_constant: true
+  drop_high_correlation: true
+  # "train" is the only leakage-free option and the default.
+  fit_on: train
+
+# --------------------------------------------------------------------------- #
+# preprocessing (fitted on the training rows only)
+# --------------------------------------------------------------------------- #
+preprocessing:
+  scale: true
+  # Median imputation followed by standardisation.
+
+# --------------------------------------------------------------------------- #
+# tuning
+# --------------------------------------------------------------------------- #
+tuning:
+  seed: 42
+  # Group-aware stratified cross-validation: paraphrase families stay together.
+  cv_splits: 3
+  # Number of random candidates per model (kept small for CPU practicality).
+  n_iter:
+    logistic_regression: 12
+    random_forest: 8
+    xgboost: 8
+    svm: 4
+  # Parallel jobs for the search. 1 keeps the run predictable on a laptop CPU.
+  n_jobs: 1
+  # 2 prints one line per cross-validation fit so a long run can be monitored.
+  verbose: 2
+  # Threads the tree ensembles may use (-1 = every core). Lower it when other
+  # work is competing for the machine.
+  model_jobs: -1
+
+# --------------------------------------------------------------------------- #
+# models
+# --------------------------------------------------------------------------- #
+models:
+  logistic_regression:
+    enabled: true
+    label: Logistic Regression
+  random_forest:
+    enabled: true
+    label: Random Forest
+  xgboost:
+    enabled: true
+    label: XGBoost
+  svm:
+    enabled: true
+    label: Support Vector Machine
+
+# The model used for the ablation and robustness studies: the one with the
+# best validation ROC-AUC. Resolved at run time.
+ablation:
+  reference_model: best
+
+# --------------------------------------------------------------------------- #
+# outputs
+# --------------------------------------------------------------------------- #
+output:
+  model_dir: models/deterministic
+  report_dir: reports/deterministic
+  artifact_dir: outputs/deterministic
+  seed: 42

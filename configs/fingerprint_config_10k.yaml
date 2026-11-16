@@ -1,0 +1,261 @@
+# MVGR-AI fingerprinting configuration for the 10,000-row deterministic branch.
+#
+# This is a *derived* configuration for the deterministic (statistical) branch
+# only. It reuses the identical extraction algorithms, model revision and
+# feature definitions of `fingerprint_config.yaml`; only the input scope, the
+# output location and the batching order differ.
+#
+# Differences from the base configuration:
+#   * input        -> `10000.csv` (10,000 records) instead of the 500-row pilot
+#   * graph branches -> deliberately unavailable: the graph features exist only
+#                      for the 500-row pilot and belong to the graph branch
+#   * outputs     -> `data/processed/fingerprinting_10k/` so the existing
+#                      500-sample artifacts are preserved for comparison
+#   * GLTR        -> length-sorted batching (identical feature values, less
+#                      padded CPU work)
+#
+# Credentials are NEVER stored here. The watermark key is referenced by the
+# NAME of an environment variable only.
+
+fingerprint_version: "fingerprint.v1"
+stylometric_version: "stylometric.v1"
+writeprints_version: "writeprints.v1"
+gltr_version: "gltr.v1"
+watermark_version: "watermark.v1"
+fusion_version: "fusion.v1"
+
+# --------------------------------------------------------------------------- #
+# input scope
+# --------------------------------------------------------------------------- #
+input:
+  # The primary dataset for the deterministic branch: 10,000 records.
+  pilot_csv: 10000.csv
+  text_column: text
+  id_column: sample_id
+  # Metadata carried through but never used as a model feature.
+  metadata_columns:
+    - label
+    - source_dataset
+    - source_task
+    - text_type
+    - graph_category
+    - paraphrase_status
+    - domain
+    - ai_model
+    - padben_split
+    - split
+    - group_id
+    - source_row_id
+  # The graph branch is out of scope here: the graph features only exist for the
+  # 500-row pilot and are owned by the graph branch. This path intentionally does
+  # not exist, so fusion reports the graph branches as unavailable.
+  graph_features: data/processed/fingerprinting_10k/graph_features.csv
+  sample_multiview_features: data/processed/fingerprinting_10k/sample_multiview_features.csv
+
+# --------------------------------------------------------------------------- #
+# Module A — stylometric text fingerprinting (identical to the base config)
+# --------------------------------------------------------------------------- #
+stylometric:
+  spacy_model: en_core_web_sm
+  spacy_disable: ["ner"]
+  word_length_bins: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20]
+  sentence_length_bins: [1, 5, 10, 15, 20, 25, 30, 40, 50, 75]
+  long_sentence_words: 25
+  short_sentence_words: 8
+  msttr_segment_words: 50
+  top_dependency_relations: 15
+  passive_labels: ["auxpass", "nsubjpass", "aux:pass", "nsubj:pass"]
+  subordinate_labels: ["mark", "advcl", "ccomp", "xcomp", "acl", "relcl", "csubj"]
+
+# --------------------------------------------------------------------------- #
+# Module B — writeprints-style stylometry (identical to the base config)
+# --------------------------------------------------------------------------- #
+writeprints:
+  seed: 42
+  vocab_limits:
+    char_unigram: 30
+    char_bigram: 40
+    char_trigram: 40
+    word_unigram: 60
+    word_bigram: 30
+    pos_unigram: 20
+    pos_bigram: 24
+    punct_pattern: 16
+  normalization: frequency
+  min_document_frequency: 1
+  # The n-gram vocabulary is a *learned* step: it decides which n-grams become
+  # features. Fitting it on the evaluation rows would let the test set shape
+  # the feature space, so the fit is restricted to the training split.
+  #
+  # The split assignment is written by the deterministic branch
+  # (`train_deterministic.py --stage split`) and depends only on the dataset
+  # and the manifest, never on the features.
+  vocabulary_scope:
+    mode: split_file
+    split_file: outputs/deterministic/split_assignment.csv
+    split_column: model_split
+    split_values: [train]
+  function_words:
+    - "the"
+    - "be"
+    - "to"
+    - "of"
+    - "and"
+    - "a"
+    - "in"
+    - "that"
+    - "have"
+    - "i"
+    - "it"
+    - "for"
+    - "not"
+    - "on"
+    - "with"
+    - "he"
+    - "as"
+    - "you"
+    - "do"
+    - "at"
+    - "this"
+    - "but"
+    - "his"
+    - "by"
+    - "from"
+    - "they"
+    - "we"
+    - "say"
+    - "her"
+    - "she"
+    - "or"
+    - "an"
+    - "will"
+    - "my"
+    - "one"
+    - "all"
+    - "would"
+    - "there"
+    - "their"
+    - "what"
+  save_sparse_npz: true
+
+# --------------------------------------------------------------------------- #
+# Module C — GLTR-style local token analysis (identical model and settings)
+# --------------------------------------------------------------------------- #
+gltr:
+  model_name: gpt2
+  model_dir: models/gltr/gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  allow_download: false
+  local_files_only: true
+  device: cpu
+  dtype: float32
+  eval_mode: true
+  batch_size: 4
+  max_length: 256
+  stride: 128
+  rank_thresholds: [10, 100, 1000]
+  top_p: 0.9
+  seed: 42
+  # Process documents from shortest to longest so the dynamically padded batches
+  # stay homogeneous. Padding is masked out, so every feature value is identical
+  # to an unsorted run; only the padded CPU work changes (~1.5x less).
+  length_sorted_batching: true
+  checkpoint:
+    enabled: true
+    path: data/processed/fingerprinting_10k/gltr_features.checkpoint.csv
+    every: 250
+
+# --------------------------------------------------------------------------- #
+# Module D — statistical watermark verification
+# --------------------------------------------------------------------------- #
+watermark:
+  default_provider: unsupported
+  providers:
+    - id: unigram_greenlist
+      enabled: true
+      gamma: 0.25
+      hash_seed: 0
+      window: 1
+      z_threshold: 4.0
+      p_value_threshold: 1.0e-5
+    - id: topic_conditioned
+      enabled: true
+      protocol_known: false
+  key_env: MVGR_WATERMARK_KEY
+  statuses: [detected, not_detected, unsupported, inconclusive]
+  interpret_absence_as: not_evidence_of_human_authorship
+
+# --------------------------------------------------------------------------- #
+# Module E — multi-view feature fusion (deterministic branches only)
+# --------------------------------------------------------------------------- #
+fusion:
+  branches:
+    - stylometric
+    - writeprints
+    - gltr
+    - watermark
+  watermark_as_feature: false
+  normalization: none
+  feature_selection:
+    max_missing_fraction: 0.30
+    constant_feature_tolerance: 1.0e-12
+    high_correlation_threshold: 0.98
+    drop_constant: true
+    drop_high_correlation: true
+  identifier_columns:
+    - sample_id
+    - graph_id
+    - build_id
+  metadata_columns:
+    - label
+    - source_dataset
+    - source_task
+    - text_type
+    - graph_category
+    - paraphrase_status
+    - domain
+    - ai_model
+    - padben_split
+    - split
+    - group_id
+    - source_row_id
+
+# --------------------------------------------------------------------------- #
+# experiments (declarations; the ablation study runs in detection/)
+# --------------------------------------------------------------------------- #
+experiments:
+  E1: {name: "stylometric", branches: [stylometric]}
+  E2: {name: "writeprints", branches: [writeprints]}
+  E3: {name: "GLTR-style", branches: [gltr]}
+  E4: {name: "watermark evidence", branches: [watermark]}
+  E5: {name: "combined selected features", branches: [stylometric, writeprints, gltr]}
+  E6: {name: "combined without GLTR", branches: [stylometric, writeprints]}
+  E7: {name: "combined without writeprints", branches: [stylometric, gltr]}
+  E8: {name: "combined without stylometric", branches: [writeprints, gltr]}
+  E9: {name: "all supported branches (+ optional watermark evidence)", branches: [stylometric, writeprints, gltr], optional_evidence: [watermark]}
+
+# --------------------------------------------------------------------------- #
+# outputs
+# --------------------------------------------------------------------------- #
+outputs:
+  root: data/processed/fingerprinting_10k
+  stylometric: data/processed/fingerprinting_10k/stylometric_features.csv
+  writeprints: data/processed/fingerprinting_10k/writeprints_features.csv
+  writeprints_vocab: data/processed/fingerprinting_10k/writeprints_vocabulary.json
+  writeprints_sparse: data/processed/fingerprinting_10k/writeprints_features.npz
+  gltr: data/processed/fingerprinting_10k/gltr_features.csv
+  watermark: data/processed/fingerprinting_10k/watermark_results.csv
+  fused: data/processed/fingerprinting_10k/fused_multiview_features.csv
+  fused_metadata: data/processed/fingerprinting_10k/fused_multiview_metadata.csv
+  schema: data/processed/fingerprinting_10k/fingerprint_feature_schema.json
+  report_dir: outputs/fingerprint_audit_10k
+  report_json: outputs/fingerprint_audit_10k/fingerprint_extraction_report.json
+  report_md: outputs/fingerprint_audit_10k/fingerprint_extraction_report.md
+  comparison_md: outputs/fingerprint_audit_10k/feature_comparison_report.md
+  offline_md: outputs/fingerprint_audit_10k/offline_execution_report.md
+
+validation:
+  max_missing_fraction: 0.30
+  require_unique_sample_ids: true
+  require_metadata_separate: true
+  require_no_identifier_features: true
